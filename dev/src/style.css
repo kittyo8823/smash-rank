@@ -198,3 +198,24 @@ textarea.in { resize: none; font-size: 13px; }
 .toast { background: var(--ink); color: #fff; padding: 9px 16px; font-weight: 700; font-size: 14px; transform: translateY(-16px); opacity: 0; transition: 0.2s; }
 .toast.in { transform: none; opacity: 1; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01s !important; transition: none !important; } }
+
+/* ---- ランク表 ---- */
+.seg { display: flex; border: 2px solid var(--ink); background: #fff; margin-bottom: 12px; }
+.seg button { flex: 1; border: 0; background: none; padding: 8px; font-weight: 700; font-size: 14px; }
+.seg button.on { background: var(--yellow); }
+.seg button + button { border-left: 2px solid var(--ink); }
+.chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; }
+.chart-head b { font-family: 'Dela Gothic One'; font-weight: 400; font-size: 17px; margin-right: 8px; }
+.done-tag, .live-tag { font-size: 11px; font-weight: 700; padding: 1px 8px; color: #fff; background: var(--red); }
+.live-tag { background: var(--mute); }
+.chart { background: #121212; padding: 14px 10px 6px; border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); }
+.crow { margin-bottom: 12px; }
+.clabel { display: inline-block; background: linear-gradient(90deg, var(--a), var(--b)); color: #fff; font-family: 'Dela Gothic One'; font-size: 13px; padding: 3px 14px; border-radius: 4px; position: relative; z-index: 1; }
+.cgrid { background: #1d1d1d; margin-top: -10px; padding: 16px 4px 6px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px 2px; }
+.cell { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.coin { width: 46px; height: 46px; border-radius: 50%; background: var(--c); border: 3px solid #f4f1ea; display: grid; place-items: center; color: #fff; font-family: 'Dela Gothic One'; font-size: 20px; position: relative; }
+.coin i { position: absolute; top: -5px; left: -7px; font-style: normal; font-size: 10px; background: #121212; color: #fff; border-radius: 999px; min-width: 18px; height: 16px; display: grid; place-items: center; padding: 0 3px; font-family: 'Zen Kaku Gothic New'; font-weight: 700; }
+.cname { color: #e6e6e6; font-size: 10px; font-weight: 700; text-align: center; line-height: 1.2; margin-top: 4px; word-break: break-all; max-width: 100%; }
+.chart-img { width: 100%; margin-top: 10px; border: 2px solid var(--ink); flex: 1; min-height: 0; object-fit: contain; }
+.btn.finish { width: 100%; margin-top: 12px; background: var(--ink); color: #fff; }
+.done-banner { display: flex; align-items: center; justify-content: space-between; background: var(--yellow); border: 2px solid var(--ink); padding: 8px 12px; font-weight: 700; margin-bottom: 12px; }

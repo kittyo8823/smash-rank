@@ -34,6 +34,7 @@ export function newRoom(code, host) {
     votes: {}, // playerId -> 'a' | 'b' | 'd'
     last: null, // 直前の判定 {a, b, r, seq}
     seq: 0,
+    done: false, // ホストが「おわり」にしてランク表を出しているか
   };
   nextPair(room);
   return room;
@@ -173,9 +174,14 @@ export function setExcluded(room, ids) {
   if (!room.pair || room.excluded.includes(room.pair.a) || room.excluded.includes(room.pair.b)) nextPair(room);
 }
 
+export function setDone(room, v) {
+  room.done = !!v;
+}
+
 export function resetRanking(room) {
   room.history = [];
   room.last = null;
+  room.done = false;
   nextPair(room);
 }
 
@@ -191,5 +197,6 @@ export function publicState(room, now = Date.now()) {
     pair: room.pair,
     votes: room.votes,
     last: room.last,
+    done: !!room.done,
   };
 }

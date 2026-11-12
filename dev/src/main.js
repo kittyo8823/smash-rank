@@ -88,7 +88,7 @@ const initial = (id) => {
 const badge = (id, size = '') => h('span', { class: `badge ${size}`, style: `--c:${colorOf(id)}` }, initial(id));
 
 // ---------- 状態 ----------
-const S = { room: null, st: null, tab: 'vs', key: '', lastSeq: null, lastStateAt: 0 };
+const S = { room: null, st: null, tab: 'vs', key: '', lastSeq: null, lastStateAt: 0, rankView: 'chart', wasDone: null };
 const isHost = () => S.room && S.room.isHost;
 const meId = () => S.room && S.room.me.id;
 
@@ -235,12 +235,19 @@ function enterRoom(room) {
   S.key = '';
   S.tab = 'vs';
   S.lastSeq = null;
+  S.wasDone = null;
   setUrlRoom(room.code);
   if (!room.isHost) save('last', { code: room.code, at: Date.now() });
   room.onState((st) => {
     if (S.room !== room) return;
     S.st = st;
     S.lastStateAt = Date.now();
+    // ホストが「おわり」にしたら全員ランク表へ
+    if (S.wasDone !== null && st.done !== S.wasDone) {
+      S.tab = st.done ? 'rank' : 'vs';
+      if (st.done) S.rankView = 'chart';
+    }
+    S.wasDone = st.done;
     if (!room.isHost && !st.players.some((p) => p.id === room.me.id)) return leaveToTitle('部屋から外れました');
     render();
   });
@@ -269,7 +276,7 @@ setInterval(() => {
 // ---------- 部屋 ----------
 function render() {
   if (!S.room || !S.st) return;
-  const key = JSON.stringify([S.st, S.tab]);
+  const key = JSON.stringify([S.st, S.tab, S.rankView]);
   if (key === S.key) return;
   S.key = key;
   const y = window.scrollY;
@@ -395,8 +402,11 @@ function renderVs() {
           h('button', { class: 'tool', onclick: () => S.room.skip() }, 'スキップ'),
           h('button', { class: 'tool', onclick: choosePairSheet }, '自分で選ぶ'),
           h('button', { class: 'tool', disabled: !n, onclick: () => S.room.undo() }, '1つ戻す')
-        )
+        ),
+        h('button', { class: 'btn finish', disabled: !n, onclick: () => confirmSheet('おわりにする？', 'いまの順位でランク表を作って、参加者全員の画面に出します。あとから続きもできます。', 'ランク表を出す', () => S.room.finish(true)) }, 'おわり！ランク表を出す')
       );
+    if (st.done)
+      main.prepend(h('div', { class: 'done-banner' }, 'ランク表を発表中！', h('button', { class: 'btn sub small', onclick: () => ((S.tab = 'rank'), (S.rankView = 'chart'), render()) }, '見る')));
   }
   // 直前の判定
   if (st.last) {
@@ -477,6 +487,19 @@ function renderRank() {
   main.append(
     h(
       'div',
+      { class: 'seg' },
+      h('button', { class: S.rankView === 'chart' ? 'on' : '', onclick: () => ((S.rankView = 'chart'), render()) }, 'ランク表'),
+      h('button', { class: S.rankView === 'list' ? 'on' : '', onclick: () => ((S.rankView = 'list'), render()) }, 'リスト')
+    )
+  );
+  if (S.rankView === 'chart') {
+    renderChart(main, list);
+    app.append(main);
+    return;
+  }
+  main.append(
+    h(
+      'div',
       { class: 'rank-head' },
       h('div', null, h('b', null, `${list.length}キャラ`), ` ・ 判定${st.history.length}回`),
       h('button', { class: 'btn sub small', onclick: () => copyRanking(list) }, 'テキストでコピー')
@@ -509,6 +532,173 @@ function renderRank() {
   }
   app.append(main);
 }
+const TIER_COLORS = [
+  ['#e8452c', '#f0702e'],
+  ['#ef6a2a', '#f39431'],
+  ['#f2a922', '#f6c93a'],
+  ['#e9be1d', '#f3d84a'],
+  ['#2bb8d8', '#4fd0e8'],
+  ['#2a9be0', '#47b3f0'],
+  ['#2b63e0', '#4a82f0'],
+  ['#2a3fd0', '#4a5ee8'],
+  ['#6a5ad8', '#8574ea'],
+];
+function tiersOf(list) {
+  const out = [];
+  for (let g = 0; g < list.length; g += 10) {
+    const rows = list.slice(g, g + 10);
+    const label = rows.length < 10 && g > 0 ? `Bottom${rows.length}` : `Top${g + 1}〜${g + 10}`;
+    out.push({ label, rows, color: rows.length < 10 && g > 0 ? ['#4a4a4a', '#666'] : TIER_COLORS[Math.min(g / 10, TIER_COLORS.length - 1)] });
+  }
+  return out;
+}
+const shortName = (id) => BY_ID[id].name.replace(/^Mii /, 'Mii').replace(/[&＆].*$/, '').replace(/\/.*$/, '');
+
+function renderChart(main, list) {
+  const st = S.st;
+  main.append(
+    h('div', { class: 'chart-head' }, h('div', null, h('b', null, `判定${st.history.length}回`), st.done ? h('span', { class: 'done-tag' }, '確定') : h('span', { class: 'live-tag' }, '途中経過')), h('button', { class: 'btn sub small', onclick: () => saveChartImage(list) }, '画像で保存'))
+  );
+  const board = h('div', { class: 'chart' });
+  for (const t of tiersOf(list)) {
+    board.append(
+      h(
+        'section',
+        { class: 'crow' },
+        h('div', { class: 'clabel', style: `--a:${t.color[0]};--b:${t.color[1]}` }, t.label),
+        h(
+          'div',
+          { class: 'cgrid' },
+          t.rows.map((r, i) =>
+            h('div', { class: 'cell', title: BY_ID[r.id].name }, h('span', { class: 'coin', style: `--c:${colorOf(r.id)}` }, initial(r.id), h('i', null, list.indexOf(r) + 1)), h('span', { class: 'cname' }, shortName(r.id)))
+          )
+        )
+      )
+    );
+  }
+  main.append(board);
+  if (isHost())
+    main.append(
+      st.done
+        ? h('button', { class: 'btn wide', onclick: () => S.room.finish(false) }, '対決に戻る（続きをやる）')
+        : h('button', { class: 'btn primary wide', disabled: !st.history.length, onclick: () => S.room.finish(true) }, 'おわり！このランク表を全員に出す')
+    );
+}
+
+/** ランク表を画像（PNG）にする */
+async function saveChartImage(list) {
+  try {
+    await document.fonts.ready;
+  } catch {
+    /* ignore */
+  }
+  const tiers = tiersOf(list);
+  const W = 1080;
+  const pad = 36;
+  const labelH = 44;
+  const cell = (W - pad * 2) / 10;
+  const coin = 78;
+  const rowH = labelH + 14 + coin + 40 + 22;
+  const headH = 130;
+  const H = headH + tiers.length * rowH + 60;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#121212';
+  g.fillRect(0, 0, W, H);
+  const F = (size, w = '') => `${w} ${size}px 'Dela Gothic One','Zen Kaku Gothic New',sans-serif`;
+  g.fillStyle = '#fff';
+  g.font = F(44);
+  g.textBaseline = 'top';
+  g.fillText('スマブラSP キャラランク', pad, 34);
+  g.font = F(20);
+  g.fillStyle = '#9a9a9a';
+  g.fillText(`最強キャラ決定戦 ・ 判定${S.st.history.length}回 ・ ${list.length}キャラ`, pad, 92);
+  let y = headH;
+  for (const t of tiers) {
+    // 帯
+    g.fillStyle = '#1d1d1d';
+    g.fillRect(pad - 12, y + labelH / 2, W - (pad - 12) * 2, rowH - labelH / 2 - 10);
+    const grad = g.createLinearGradient(pad, 0, pad + 200, 0);
+    grad.addColorStop(0, t.color[0]);
+    grad.addColorStop(1, t.color[1]);
+    g.fillStyle = grad;
+    g.font = F(24);
+    const lw = g.measureText(t.label).width + 36;
+    roundRect(g, pad - 4, y, lw, labelH, 6);
+    g.fill();
+    g.fillStyle = '#fff';
+    g.textBaseline = 'middle';
+    g.fillText(t.label, pad + 14, y + labelH / 2 + 1);
+    // キャラ
+    t.rows.forEach((r, i) => {
+      const cx = pad + cell * i + cell / 2;
+      const cy = y + labelH + 14 + coin / 2;
+      g.beginPath();
+      g.arc(cx, cy, coin / 2, 0, Math.PI * 2);
+      g.fillStyle = '#f4f1ea';
+      g.fill();
+      g.beginPath();
+      g.arc(cx, cy, coin / 2 - 5, 0, Math.PI * 2);
+      g.fillStyle = colorOf(r.id);
+      g.fill();
+      g.fillStyle = '#fff';
+      g.textAlign = 'center';
+      g.font = F(34);
+      g.fillText(initial(r.id), cx, cy + 2);
+      g.font = F(17, '700');
+      g.fillStyle = '#eaeaea';
+      wrapText(g, shortName(r.id), cx, cy + coin / 2 + 18, cell - 6, 19);
+      g.textAlign = 'left';
+    });
+    y += rowH;
+  }
+  g.font = F(16);
+  g.fillStyle = '#666';
+  g.textBaseline = 'alphabetic';
+  g.fillText('非公式ファンツール', pad, H - 22);
+  const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+  const file = new File([blob], 'smash-rank.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'スマブラSP キャラランク' });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: 'smash-rank.png' });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  openSheet([h('div', { class: 'sheet-title' }, 'ランク表の画像'), h('p', { class: 'sheet-body' }, '保存されない場合は、画像を長押しして保存してください。'), h('img', { src: url, class: 'chart-img', alt: 'ランク表' }), h('button', { class: 'btn ghost wide', onclick: closeSheet }, '閉じる')], true);
+}
+function roundRect(g, x, y, w, hh, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + hh, r);
+  g.arcTo(x + w, y + hh, x, y + hh, r);
+  g.arcTo(x, y + hh, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+function wrapText(g, text, cx, y, maxW, lh) {
+  const chars = [...text];
+  let line = '';
+  const lines = [];
+  for (const ch of chars) {
+    if (g.measureText(line + ch).width > maxW && line) {
+      lines.push(line);
+      line = ch;
+    } else line += ch;
+  }
+  lines.push(line);
+  lines.slice(0, 2).forEach((l, i) => g.fillText(l, cx, y + i * lh));
+}
+
 async function copyRanking(list) {
   const lines = ['【最強キャラ決定戦】スマブラSP キャラランク', `（判定${S.st.history.length}回）`];
   list.forEach((r, i) => {

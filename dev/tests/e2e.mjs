@@ -73,6 +73,9 @@ try {
   await host.click('.fighter.b');
   // ランキング
   await g1.click('.tabs button:has-text("ランキング")');
+  await g1.waitForSelector('.chart');
+  await shot(g1, '05b-chart-live');
+  await g1.click('.seg button:has-text("リスト")');
   await g1.waitForSelector('.tier');
   const tiers = await g1.$$eval('.tier h2', (e) => e.map((x) => x.firstChild.textContent));
   console.log('tiers', tiers.join(', '));
@@ -88,6 +91,22 @@ try {
   // メンバー
   await host.click('.tabs button:has-text("メンバー")');
   await shot(host, '07-members');
+  // ホストが「おわり」→ 全員ランク表
+  await host.click('.tabs button:has-text("対決")');
+  await host.click('text=おわり！ランク表を出す');
+  await host.click('.sheet-panel .btn.primary');
+  await g2.waitForSelector('.chart .done-tag, .chart-head .done-tag');
+  await g2.waitForTimeout(300);
+  await shot(g2, '08-chart-done');
+  await g2.screenshot({ path: `${SHOT}/08b-chart-full.png`, fullPage: true });
+  console.log('finish ok, guest sees chart');
+  const [dl] = await Promise.all([host.waitForEvent('download'), host.click('text=画像で保存')]);
+  await dl.saveAs(`${SHOT}/09-chart-image.png`);
+  console.log('image saved');
+  await host.click('.sheet-panel .btn.ghost');
+  await host.click('text=対決に戻る');
+  await g2.waitForSelector('.fighter');
+  console.log('continue ok');
   // ホスト再読み込み → つづきから
   await host.reload();
   await host.click('text=つづきから');

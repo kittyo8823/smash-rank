@@ -1,7 +1,7 @@
 // 通信：公開の MQTT 中継サーバー経由で、部屋の全員と状態をやり取りする
 // ホストが部屋の状態を持ち、変更のたびに全員へ配る（retain で途中参加・再読み込みにも対応）。
 /* global mqtt */
-import { newRoom, addPlayer, removePlayer, judge, undo, vote, nextPair, choosePair, setExcluded, resetRanking, publicState, randomCode } from './rank.js';
+import { newRoom, addPlayer, removePlayer, setDone, judge, undo, vote, nextPair, choosePair, setExcluded, resetRanking, publicState, randomCode } from './rank.js';
 
 const DEFAULT_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 const PREFIX = 'smashrank/v1/';
@@ -185,6 +185,10 @@ export class HostRoom extends Room {
   }
   setExcluded(ids) {
     setExcluded(this.room, ids);
+    this.publish();
+  }
+  finish(v) {
+    setDone(this.room, v);
     this.publish();
   }
   reset() {
