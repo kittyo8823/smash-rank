@@ -11,28 +11,46 @@ assert.ok(R.vote(r, 'g', 'a').ok);
 assert.ok(!R.vote(r, 'zz', 'a').ok);
 const { a, b } = r.pair;
 R.judge(r, 'a');
-assert.deepEqual(r.history[0], [a, b, 1]);
+assert.deepEqual(R.board(r).history[0], [a, b, 1]);
 assert.equal(r.last.votes.g, 'a');
 assert.deepEqual(r.votes, {}, 'votes reset');
 const rk = R.ranking(r);
 assert.ok(rk.findIndex((x) => x.id === a) < rk.findIndex((x) => x.id === b));
 assert.equal(rk[0].id, a);
 R.undo(r);
-assert.equal(r.history.length, 0); assert.equal(r.pair.a, a);
+assert.equal(R.board(r).history.length, 0); assert.equal(r.pair.a, a);
 assert.ok(R.choosePair(r, 'mario', 'sora').ok);
 assert.ok(!R.choosePair(r, 'mario', 'mario').ok);
 R.judge(r, 'd');
-assert.deepEqual(r.history[0], ['mario', 'sora', 0.5]);
+assert.deepEqual(R.board(r).history[0], ['mario', 'sora', 0.5]);
 R.setExcluded(r, ['miibrawler', 'miisword', 'miigunner', 'bogus']);
-assert.equal(R.activeChars(r).length, 83);
+assert.equal(R.activeIds(r).length, 83);
 assert.equal(R.ranking(r).length, 83);
-for (let i = 0; i < 50; i++) { assert.ok(!r.excluded.includes(r.pair.a) && !r.excluded.includes(r.pair.b)); R.judge(r, 'b'); }
+for (let i = 0; i < 50; i++) { assert.ok(!R.board(r).excluded.includes(r.pair.a) && !R.board(r).excluded.includes(r.pair.b)); R.judge(r, 'b'); }
 // 推移律：A>B, B>C なら A>B>C
 const t = R.newRoom('X', { id: 'h', name: 'h' });
 for (const [x, y] of [['mario', 'luigi'], ['luigi', 'peach'], ['mario', 'luigi'], ['luigi', 'peach']]) { R.choosePair(t, x, y); R.judge(t, 'a'); }
 const order = R.ranking(t).map((x) => x.id);
 assert.ok(order.indexOf('mario') < order.indexOf('luigi') && order.indexOf('luigi') < order.indexOf('peach'));
 assert.equal(order.at(-1), 'peach');
-R.resetRanking(t); assert.equal(t.history.length, 0);
+R.resetRanking(t); assert.equal(R.board(t).history.length, 0);
+// 技tier表
+const charsDone = R.board(r).history.length;
+assert.ok(R.setMode(r, 'moves:mario').ok);
+assert.ok(!R.setMode(r, 'moves:nobody').ok);
+assert.equal(R.activeIds(r).length, 22, 'final excluded by default');
+assert.ok(R.MOVE_BY_ID[r.pair.a] && R.MOVE_BY_ID[r.pair.b]);
+R.choosePair(r, 'fsmash', 'jab'); R.judge(r, 'a');
+assert.equal(R.ranking(r)[0].id, 'fsmash');
+assert.ok(!R.choosePair(r, 'mario', 'jab').ok);
+R.setNames(r, { sb: 'ファイアボール', bogus: 'x', nb: '  ' });
+assert.deepEqual(R.board(r).names, { sb: 'ファイアボール' });
+R.setMode(r, 'chars');
+assert.equal(R.board(r).history.length, charsDone, 'chars board kept');
+R.setMode(r, 'moves:mario');
+assert.equal(R.board(r).history.length, 1, 'moves board kept');
+const old = { code: 'X', hostId: 'h', players: [], seen: {}, history: [['mario', 'luigi', 1]], excluded: ['sora'], pair: null, votes: {}, seq: 0 };
+R.migrate(old);
+assert.equal(old.mode, 'chars'); assert.equal(old.boards.chars.history.length, 1); assert.deepEqual(old.boards.chars.excluded, ['sora']);
 assert.equal(R.normalizeCode('ａｂ１２-cd'), 'AB12CD');
 console.log('rank tests ok');

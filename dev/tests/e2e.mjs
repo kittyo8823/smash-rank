@@ -136,6 +136,38 @@ try {
   await host.click('.fighter.a');
   await g2.waitForFunction(() => document.querySelector('.meter-text b').textContent === '51');
   console.log('after resume synced');
+  // 技tier表に切り替え
+  await host.click('.subject button:has-text("切り替え")');
+  await host.fill('.sheet-panel input', 'まりお');
+  await shot(host, '10-mode-sheet');
+  await host.click('.pick:has-text("マリオ") >> nth=0');
+  await g2.waitForSelector('.subject:has-text("マリオの技tier表")');
+  console.log('mode switch ok', await g2.$$eval('.f-name', (e) => e.map((x) => x.textContent).join(' vs ')));
+  for (let i = 0; i < 6; i++) {
+    const cur = await nm(host);
+    await host.click(i % 2 ? '.fighter.a' : '.fighter.b');
+    await host.waitForFunction((b) => [...document.querySelectorAll('.f-name')].map((x) => x.textContent).join('|') !== b, cur);
+  }
+  await shot(g2, '11-moves-vs');
+  // 技の呼び名
+  await host.click('.tabs button:has-text("設定")');
+  await host.fill('.nick:has-text("横B") input', 'ファイアボール');
+  await host.fill('.nick:has-text("上B") input', 'スーパージャンプパンチ');
+  await host.click('text=呼び名を保存');
+  await shot(host, '12-moves-settings');
+  await g2.click('.tabs button:has-text("ランキング")');
+  await g2.click('.seg button:has-text("リスト")');
+  await g2.waitForSelector('.nm:has-text("ファイアボール")');
+  await g2.click('.seg button:has-text("ランク表")');
+  await g2.waitForTimeout(300);
+  await shot(g2, '13-moves-chart');
+  console.log('move names ok, items', await g2.textContent('.rank-head b, .chart-head b'));
+  // キャラ表に戻ると記録が残っている
+  await host.click('.subject button:has-text("切り替え")');
+  await host.click('.mode-chars');
+  await g2.waitForSelector('.subject:has-text("キャラtier表")');
+  await g2.click('.tabs button:has-text("対決")');
+  console.log('back to chars, count', await g2.textContent('.meter-text b'));
   // 閉じる
   await host.click('.top .linkbtn');
   await host.click('.sheet-panel .btn.danger');

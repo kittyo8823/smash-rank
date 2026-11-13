@@ -1,6 +1,63 @@
 // ランキングの中心（画面・通信と独立）
 import { CHARS, BY_ID } from './chars.js';
 
+/** 技tier表で比べる技（全キャラ共通の枠）[id, 名前, バッジの略, 分類] */
+export const MOVES = [
+  ['jab', '弱攻撃', '弱', '地上攻撃'],
+  ['dash', 'ダッシュ攻撃', 'DA', '地上攻撃'],
+  ['ftilt', '横強', '横強', '強攻撃'],
+  ['utilt', '上強', '上強', '強攻撃'],
+  ['dtilt', '下強', '下強', '強攻撃'],
+  ['fsmash', '横スマ', '横ス', 'スマッシュ'],
+  ['usmash', '上スマ', '上ス', 'スマッシュ'],
+  ['dsmash', '下スマ', '下ス', 'スマッシュ'],
+  ['nair', '空N', '空N', '空中攻撃'],
+  ['fair', '空前', '空前', '空中攻撃'],
+  ['bair', '空後', '空後', '空中攻撃'],
+  ['uair', '空上', '空上', '空中攻撃'],
+  ['dair', '空下', '空下', '空中攻撃'],
+  ['nb', 'NB（通常必殺ワザ）', 'NB', '必殺ワザ'],
+  ['sb', '横B（横必殺ワザ）', '横B', '必殺ワザ'],
+  ['ub', '上B（上必殺ワザ）', '上B', '必殺ワザ'],
+  ['db', '下B（下必殺ワザ）', '下B', '必殺ワザ'],
+  ['grab', 'つかみ', 'つ', 'つかみ・投げ'],
+  ['fthrow', '前投げ', '前投', 'つかみ・投げ'],
+  ['bthrow', '後投げ', '後投', 'つかみ・投げ'],
+  ['uthrow', '上投げ', '上投', 'つかみ・投げ'],
+  ['dthrow', '下投げ', '下投', 'つかみ・投げ'],
+  ['final', '最後の切りふだ', '切札', 'その他'],
+].map(([id, name, mark, group], i) => ({ id, name, mark, group, no: i + 1 }));
+export const MOVE_BY_ID = Object.fromEntries(MOVES.map((m) => [m.id, m]));
+
+/** モード：'chars'（キャラtier表） か 'moves:<キャラid>'（そのキャラの技tier表） */
+export function itemIds(mode) {
+  return mode === 'chars' ? CHARS.map((c) => c.id) : MOVES.map((m) => m.id);
+}
+export function validMode(mode) {
+  if (mode === 'chars') return true;
+  const m = /^moves:(.+)$/.exec(String(mode));
+  return !!(m && BY_ID[m[1]]);
+}
+function defaultBoard(mode) {
+  return { history: [], excluded: mode === 'chars' ? [] : ['final'], names: {} };
+}
+/** 今のモードの記録 */
+export function board(room) {
+  if (!room.boards[room.mode]) room.boards[room.mode] = defaultBoard(room.mode);
+  return room.boards[room.mode];
+}
+/** 古い形（キャラtier表だけ）の保存データを今の形にする */
+export function migrate(room) {
+  if (!room.boards) {
+    room.boards = { chars: { history: room.history || [], excluded: room.excluded || [], names: {} } };
+    room.mode = 'chars';
+    delete room.history;
+    delete room.excluded;
+  }
+  if (!validMode(room.mode)) room.mode = 'chars';
+  return room;
+}
+
 export const MAX_PLAYERS = 20;
 export const NAME_MAX = 10;
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -28,8 +85,9 @@ export function newRoom(code, host) {
     hostId: host.id,
     players: [{ id: host.id, name: host.name }],
     seen: {},
-    history: [], // [aId, bId, 結果] 結果: 1=aが強い 0=bが強い 0.5=同じくらい
-    excluded: [],
+    mode: 'chars',
+    // モードごとの記録 { history: [aId, bId, 結果（1=aが強い 0=bが強い 0.5=同じくらい）], excluded, names（技の呼び名） }
+    boards: { chars: defaultBoard('chars') },
     pair: null, // {a, b, seq}
     votes: {}, // playerId -> 'a' | 'b' | 'd'
     last: null, // 直前の判定 {a, b, r, seq}
@@ -56,7 +114,7 @@ export function removePlayer(room, id) {
   delete room.votes[id];
 }
 
-export const activeChars = (room) => CHARS.filter((c) => !room.excluded.includes(c.id));
+export const activeIds = (room) => itemIds(room.mode).filter((id) => !board(room).excluded.includes(id));
 
 /**
  * 強さの推定（ブラッドリー・テリー法）
@@ -99,9 +157,9 @@ export function ratings(history, ids = CHARS.map((c) => c.id)) {
 
 /** 順位表（強い順） */
 export function ranking(room) {
-  const ids = activeChars(room).map((c) => c.id);
-  return ratings(room.history, ids)
-    .sort((x, y) => y.score - x.score || x.count - y.count || BY_ID[x.id].no - BY_ID[y.id].no)
+  const ids = activeIds(room);
+  return ratings(board(room).history, ids)
+    .sort((x, y) => y.score - x.score || x.count - y.count || ids.indexOf(x.id) - ids.indexOf(y.id))
     .map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
@@ -109,10 +167,11 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 /** 次の2択：比較の少ないキャラと、強さが近いキャラを組ませる */
 export function suggestPair(room, rnd = Math.random) {
-  const ids = activeChars(room).map((c) => c.id);
+  const ids = activeIds(room);
   if (ids.length < 2) return null;
-  const rs = ratings(room.history, ids);
-  const done = new Set(room.history.map(([a, b]) => pairKey(a, b)));
+  const bd = board(room);
+  const rs = ratings(bd.history, ids);
+  const done = new Set(bd.history.map(([a, b]) => pairKey(a, b)));
   const min = Math.min(...rs.map((r) => r.count));
   const fewest = rs.filter((r) => r.count <= min + 0);
   const A = fewest[Math.floor(rnd() * fewest.length)];
@@ -137,7 +196,8 @@ export function nextPair(room, rnd) {
 }
 
 export function choosePair(room, a, b) {
-  if (!BY_ID[a] || !BY_ID[b] || a === b) return { ok: false };
+  const ids = itemIds(room.mode);
+  if (!ids.includes(a) || !ids.includes(b) || a === b) return { ok: false };
   setPair(room, a, b);
   return { ok: true };
 }
@@ -147,14 +207,14 @@ export function judge(room, win, rnd) {
   const pr = room.pair;
   if (!pr || !['a', 'b', 'd'].includes(win)) return { ok: false };
   const r = win === 'a' ? 1 : win === 'b' ? 0 : 0.5;
-  room.history.push([pr.a, pr.b, r]);
+  board(room).history.push([pr.a, pr.b, r]);
   room.last = { a: pr.a, b: pr.b, r, seq: pr.seq, votes: { ...room.votes } };
   nextPair(room, rnd);
   return { ok: true };
 }
 
 export function undo(room) {
-  const h = room.history.pop();
+  const h = board(room).history.pop();
   if (!h) return { ok: false };
   setPair(room, h[0], h[1]);
   room.last = null;
@@ -169,9 +229,33 @@ export function vote(room, pid, v) {
 }
 
 export function setExcluded(room, ids) {
-  room.excluded = [...new Set(ids.filter((id) => BY_ID[id]))];
-  if (activeChars(room).length < 2) room.excluded = room.excluded.slice(0, CHARS.length - 2);
-  if (!room.pair || room.excluded.includes(room.pair.a) || room.excluded.includes(room.pair.b)) nextPair(room);
+  const all = itemIds(room.mode);
+  const B = board(room);
+  B.excluded = [...new Set(ids.filter((id) => all.includes(id)))];
+  if (all.length - B.excluded.length < 2) B.excluded = B.excluded.slice(0, all.length - 2);
+  if (!room.pair || B.excluded.includes(room.pair.a) || B.excluded.includes(room.pair.b)) nextPair(room);
+}
+
+/** 技の呼び名を付ける（例：横B →「ファイアボール」） */
+export function setNames(room, names) {
+  if (room.mode === 'chars') return;
+  const out = {};
+  for (const [id, v] of Object.entries(names || {})) {
+    const n = cleanName(v, 16);
+    if (MOVE_BY_ID[id] && n) out[id] = n;
+  }
+  board(room).names = out;
+}
+
+/** キャラtier表 ⇔ 各キャラの技tier表 を切り替える（それぞれの記録は残る） */
+export function setMode(room, mode) {
+  if (!validMode(mode)) return { ok: false };
+  room.mode = mode;
+  board(room);
+  room.last = null;
+  room.done = false;
+  nextPair(room);
+  return { ok: true };
 }
 
 export function setDone(room, v) {
@@ -179,7 +263,7 @@ export function setDone(room, v) {
 }
 
 export function resetRanking(room) {
-  room.history = [];
+  board(room).history = [];
   room.last = null;
   room.done = false;
   nextPair(room);
@@ -192,8 +276,8 @@ export function publicState(room, now = Date.now()) {
     code: room.code,
     hostId: room.hostId,
     players: room.players.map((p) => ({ id: p.id, name: p.name, online: p.id === room.hostId || now - (room.seen[p.id] || 0) < 25000 })),
-    history: room.history,
-    excluded: room.excluded,
+    mode: room.mode,
+    boards: room.boards,
     pair: room.pair,
     votes: room.votes,
     last: room.last,

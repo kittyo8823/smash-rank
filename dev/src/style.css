@@ -260,3 +260,17 @@ textarea.in { resize: none; font-size: 13px; }
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 46; overflow: hidden; }
 .confetti i { position: absolute; top: -20px; width: 9px; height: 14px; animation: fall linear forwards; }
 @keyframes fall { to { transform: translate(var(--x), 105vh) rotate(var(--r)); } }
+
+/* ---- 技tier表 ---- */
+.badge.m2 { font-size: 11px; letter-spacing: -0.04em; }
+.badge.xl.m2 { font-size: 30px; }
+.coin.m2 { font-size: 13px; letter-spacing: -0.04em; }
+.subject { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border: 2px solid var(--ink); background: #fff; padding: 8px 10px; margin-bottom: 12px; }
+.subject .subj-k { font-size: 10px; font-weight: 700; background: var(--ink); color: #fff; padding: 1px 6px; }
+.subject b { flex: 1; display: inline-flex; align-items: center; gap: 6px; font-family: 'Dela Gothic One'; font-weight: 400; font-size: 16px; min-width: 0; }
+.subject .badge { width: 24px; height: 24px; font-size: 12px; }
+.pick-n { display: block; font-size: 10px; color: var(--red); }
+.btn.mode-chars { margin: 0 0 4px; }
+.nick-list { display: grid; gap: 6px; margin: 10px 0 4px; }
+.nick { display: grid; grid-template-columns: 30px 78px 1fr; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+.in.small { padding: 8px 10px; font-size: 15px; }

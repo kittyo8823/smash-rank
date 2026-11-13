@@ -1,6 +1,6 @@
 // スマブラtier表：画面
 import { connect, HostRoom, GuestRoom } from './net.js';
-import { normalizeCode, cleanName, NAME_MAX, MAX_PLAYERS, ratings } from './rank.js';
+import { normalizeCode, cleanName, NAME_MAX, MAX_PLAYERS, ratings, MOVE_BY_ID, itemIds } from './rank.js';
 import { CHARS, BY_ID, norm } from './chars.js';
 
 // ---------- 小道具 ----------
@@ -80,12 +80,39 @@ function confirmSheet(title, body, okLabel, onOk, danger = false) {
 // シリーズごとの色
 const SERIES_COLORS = ['#e5262b', '#1d5bd8', '#1f9d55', '#f29a00', '#7b3fd1', '#0aa3a8', '#d6336c', '#5c6b00', '#b3541e', '#2b2b2b', '#4a7fb5', '#9c2f8f'];
 const seriesList = [...new Set(CHARS.map((c) => c.series))];
-const colorOf = (id) => SERIES_COLORS[seriesList.indexOf(BY_ID[id].series) % SERIES_COLORS.length];
-const initial = (id) => {
-  const n = BY_ID[id].name.replace(/^Mii /, '');
-  return [...n][0];
+const charColor = (id) => SERIES_COLORS[seriesList.indexOf(BY_ID[id].series) % SERIES_COLORS.length];
+const charInfo = (id) => {
+  const c = BY_ID[id];
+  return { name: c.name, sub: c.series, mark: [...c.name.replace(/^Mii /, '')][0], color: charColor(id), short: c.name.replace(/^Mii /, 'Mii').replace(/[&＆].*$/, '').replace(/\/.*$/, '') };
 };
-const badge = (id, size = '') => h('span', { class: `badge ${size}`, style: `--c:${colorOf(id)}` }, initial(id));
+const MOVE_COLORS = { 地上攻撃: '#1d5bd8', 強攻撃: '#0aa3a8', スマッシュ: '#e5262b', 空中攻撃: '#7b3fd1', 必殺ワザ: '#f29a00', 'つかみ・投げ': '#1f9d55', その他: '#2b2b2b' };
+const moveInfo = (id, names = {}) => {
+  const m = MOVE_BY_ID[id];
+  const nick = names[id];
+  return { name: nick ? `${nick}（${m.mark}）` : m.name, sub: nick ? `${m.name}・${m.group}` : m.group, mark: m.mark, color: MOVE_COLORS[m.group], short: nick || m.name.replace(/（.*$/, '') };
+};
+// いま表示しているモード（キャラtier表 / ○○の技tier表）
+let V = null;
+function makeView(st) {
+  const isChars = st.mode === 'chars';
+  const B = st.boards[st.mode] || { history: [], excluded: isChars ? [] : ['final'], names: {} };
+  const charId = isChars ? null : st.mode.slice(6);
+  return {
+    B,
+    isChars,
+    charId,
+    ids: itemIds(st.mode),
+    info: (id) => (isChars ? charInfo(id) : moveInfo(id, B.names || {})),
+    unit: isChars ? 'キャラ' : '技',
+    title: isChars ? 'キャラtier表' : `${BY_ID[charId].name}の技tier表`,
+  };
+}
+const colorOf = (id) => V.info(id).color;
+const initial = (id) => V.info(id).mark;
+const badge = (id, size = '', info = null) => {
+  const i = info || V.info(id);
+  return h('span', { class: `badge ${size} ${[...i.mark].length > 1 ? 'm2' : ''}`, style: `--c:${i.color}` }, i.mark);
+};
 
 // ---------- 状態 ----------
 const S = { room: null, st: null, tab: 'vs', key: '', lastSeq: null, lastStateAt: 0, rankView: 'chart', wasDone: null, pairSeq: null, picking: false, revealAnim: false };
@@ -152,7 +179,8 @@ function renderTitle(msg) {
   const resume = [];
   const hostSave = load('host');
   if (hostSave && Date.now() - hostSave.at < 7 * 86400e3 && hostSave.room && hostSave.room.hostId === myId()) {
-    resume.push(h('button', { class: 'btn resume', onclick: () => createRoom(hostSave.room.players[0].name, hostSave.room) }, `つづきから（部屋 ${hostSave.room.code}・判定${hostSave.room.history.length}回）`));
+    const cnt = hostSave.room.boards ? Object.values(hostSave.room.boards).reduce((a, b) => a + b.history.length, 0) : (hostSave.room.history || []).length;
+    resume.push(h('button', { class: 'btn resume', onclick: () => createRoom(hostSave.room.players[0].name, hostSave.room) }, `つづきから（部屋 ${hostSave.room.code}・判定${cnt}回）`));
   }
   const last = load('last');
   if (last && Date.now() - last.at < 86400e3 && (!hostSave || last.code !== hostSave.room?.code)) {
@@ -281,6 +309,7 @@ setInterval(() => {
 // ---------- 部屋 ----------
 function render() {
   if (!S.room || !S.st) return;
+  V = makeView(S.st);
   const key = JSON.stringify([S.st, S.tab, S.rankView]);
   if (key === S.key) return;
   S.key = key;
@@ -345,8 +374,8 @@ async function share() {
 
 // 現在の順位（id -> 順位）
 function rankMap(history, excluded) {
-  const ids = CHARS.filter((c) => !excluded.includes(c.id)).map((c) => c.id);
-  const rs = ratings(history, ids).sort((x, y) => y.score - x.score || x.count - y.count || BY_ID[x.id].no - BY_ID[y.id].no);
+  const ids = V.ids.filter((id) => !excluded.includes(id));
+  const rs = ratings(history, ids).sort((x, y) => y.score - x.score || x.count - y.count || ids.indexOf(x.id) - ids.indexOf(y.id));
   return { list: rs, pos: new Map(rs.map((r, i) => [r.id, i + 1])) };
 }
 
@@ -354,10 +383,10 @@ function rankMap(history, excluded) {
 function renderVs() {
   const st = S.st;
   const pr = st.pair;
-  const active = CHARS.length - st.excluded.length;
-  const n = st.history.length;
+  const active = V.ids.length - V.B.excluded.length;
+  const n = V.B.history.length;
   const avg = (n * 2) / Math.max(1, active);
-  const { pos, list } = rankMap(st.history, st.excluded);
+  const { pos, list } = rankMap(V.B.history, V.B.excluded);
   const count = new Map(list.map((r) => [r.id, r.count]));
   const myVote = st.votes[meId()];
   const host = isHost();
@@ -374,6 +403,7 @@ function renderVs() {
   const newPair = !!(pr && S.pairSeq !== null && S.pairSeq !== pr.seq);
   S.pairSeq = pr ? pr.seq : S.pairSeq;
   const main = h('main', { class: 'vs-main' });
+  main.append(subjectBar());
   main.append(
     h(
       'div',
@@ -388,7 +418,7 @@ function renderVs() {
   } else {
     const side = (k) => {
       const id = pr[k];
-      const c = BY_ID[id];
+      const c = V.info(id);
       const chosen = myVote === k;
       return h(
         'button',
@@ -396,7 +426,7 @@ function renderVs() {
         h('span', { class: 'f-rank' }, count.get(id) ? `いま ${pos.get(id)}位` : 'はじめての対決', h('small', null, `比較${count.get(id) || 0}回`)),
         badge(id, 'xl'),
         h('span', { class: 'f-name' }, c.name),
-        h('span', { class: 'f-series' }, c.series),
+        h('span', { class: 'f-series' }, c.sub),
         h('span', { class: 'f-votes' }, tally[k].length ? `${tally[k].length}票：${tally[k].join('、')}` : '')
       );
     };
@@ -419,7 +449,7 @@ function renderVs() {
     if (st.done)
       main.prepend(h('div', { class: 'done-banner' }, 'ランク表を発表中！', h('button', { class: 'btn sub small', onclick: () => ((S.tab = 'rank'), (S.rankView = 'chart'), render()) }, '見る')));
   }
-  if (freshJudge && n > 0 && n % 50 === 0) milestone(n, list);
+  if (freshJudge && n > 0 && n % (active > 40 ? 50 : 20) === 0) milestone(n, list, rough, good);
   // 直前の判定
   if (st.last) {
     const L = st.last;
@@ -434,7 +464,7 @@ function renderVs() {
         'div',
         { class: `last ${fresh ? 'fresh' : ''}` },
         h('span', { class: 'last-k' }, '前回の判定'),
-        w ? h('span', null, h('b', null, BY_ID[w].name), ' ＞ ', BY_ID[lose].name) : h('span', null, BY_ID[L.a].name, ' ＝ ', BY_ID[L.b].name, '（同じくらい）'),
+        w ? h('span', null, h('b', null, V.info(w).name), ' ＞ ', V.info(lose).name) : h('span', null, V.info(L.a).name, ' ＝ ', V.info(L.b).name, '（同じくらい）'),
         total ? h('span', { class: 'agree' }, `同じ意見 ${agree}/${total}人`) : null
       )
     );
@@ -467,26 +497,26 @@ function pick(k) {
   }
   {
     S.room.vote(k);
-    toast(k === 'd' ? '「同じくらい」に投票しました' : `${BY_ID[S.st.pair[k]].name} に投票しました`);
+    toast(k === 'd' ? '「同じくらい」に投票しました' : `${V.info(S.st.pair[k]).name} に投票しました`);
   }
 }
 
 /** 参加者の画面：ホストが決めた瞬間のハンコ */
 function stamp(L) {
   const w = L.r === 1 ? L.a : L.r === 0 ? L.b : null;
-  return h('div', { class: 'stamp' }, w ? [h('small', null, 'ホストの判定'), BY_ID[w].name, h('b', null, 'WIN!')] : [h('small', null, 'ホストの判定'), h('b', null, '互角！')]);
+  return h('div', { class: 'stamp' }, w ? [h('small', null, 'ホストの判定'), V.info(w).name, h('b', null, 'WIN!')] : [h('small', null, 'ホストの判定'), h('b', null, '互角！')]);
 }
 
 /** 50回ごとの節目：いまの上位をちらっと見せる */
-function milestone(n, list) {
+function milestone(n, list, rough, good) {
   document.querySelector('.milestone')?.remove();
-  const msg = n >= 300 ? 'かなり正確になってきた！' : n >= 150 ? 'ランクが固まってきた！' : n >= 100 ? 'TOP10が見えてきた！' : '上位が見えはじめた！';
+  const msg = n >= good ? 'かなり正確になってきた！' : n >= rough ? 'ランクが固まってきた！' : n >= rough * 0.66 ? 'TOP10が見えてきた！' : '上位が見えはじめた！';
   const el = h(
     'div',
     { class: 'milestone' },
     h('div', { class: 'ms-n' }, h('b', null, n), '回突破！'),
     h('div', { class: 'ms-msg' }, msg),
-    h('ol', { class: 'ms-top' }, list.slice(0, 5).map((r, i) => h('li', null, h('span', { class: 'no' }, i + 1), badge(r.id), h('span', null, BY_ID[r.id].name))))
+    h('ol', { class: 'ms-top' }, list.slice(0, 5).map((r, i) => h('li', null, h('span', { class: 'no' }, i + 1), badge(r.id), h('span', null, V.info(r.id).name))))
   );
   el.addEventListener('click', () => el.remove());
   document.body.append(el);
@@ -496,14 +526,15 @@ function milestone(n, list) {
 
 function choosePairSheet() {
   let first = null;
-  const search = h('input', { class: 'in', placeholder: 'キャラ名でさがす', enterkeyhint: 'search' });
-  const head = h('div', { class: 'sheet-title' }, '1人目を選ぶ');
+  const search = h('input', { class: 'in', placeholder: `${V.unit}の名前でさがす`, enterkeyhint: 'search' });
+  const head = h('div', { class: 'sheet-title' }, `1つ目の${V.unit}を選ぶ`);
   const list = h('div', { class: 'pick-list' });
   const draw = () => {
     const q = norm(search.value);
     list.textContent = '';
-    for (const c of CHARS) {
-      if (S.st.excluded.includes(c.id) || (q && !norm(c.name).includes(q) && !norm(c.series).includes(q))) continue;
+    for (const id of V.ids) {
+      const c = { id, ...V.info(id) };
+      if (V.B.excluded.includes(c.id) || (q && !norm(c.name).includes(q) && !norm(c.sub).includes(q))) continue;
       list.append(
         h(
           'button',
@@ -512,7 +543,7 @@ function choosePairSheet() {
             onclick: () => {
               if (!first) {
                 first = c.id;
-                head.textContent = `${c.name} と比べるキャラを選ぶ`;
+                head.textContent = `${c.name} と比べる${V.unit}を選ぶ`;
                 search.value = '';
                 draw();
                 search.focus();
@@ -536,10 +567,11 @@ function choosePairSheet() {
 // ---------- ランキング ----------
 function renderRank() {
   const st = S.st;
-  const { list } = rankMap(st.history, st.excluded);
+  const { list } = rankMap(V.B.history, V.B.excluded);
   // 1つ前の判定時点との比較（↑↓）
-  const prev = st.history.length ? rankMap(st.history.slice(0, -1), st.excluded).pos : null;
+  const prev = V.B.history.length ? rankMap(V.B.history.slice(0, -1), V.B.excluded).pos : null;
   const main = h('main', { class: 'rank-main' });
+  main.append(subjectBar());
   main.append(
     h(
       'div',
@@ -557,18 +589,18 @@ function renderRank() {
     h(
       'div',
       { class: 'rank-head' },
-      h('div', null, h('b', null, `${list.length}キャラ`), ` ・ 判定${st.history.length}回`),
+      h('div', null, h('b', null, `${list.length}${V.unit}`), ` ・ 判定${V.B.history.length}回`),
       h('button', { class: 'btn sub small', onclick: () => copyRanking(list) }, 'テキストでコピー')
     )
   );
-  if (st.history.length < 20) main.append(h('p', { class: 'note' }, 'まだ判定が少ないので、順位はほぼバラバラです。「対決」で答えるほど正確になります。'));
+  if (V.B.history.length < Math.min(20, list.length)) main.append(h('p', { class: 'note' }, 'まだ判定が少ないので、順位はほぼバラバラです。「対決」で答えるほど正確になります。'));
   for (let g = 0; g < list.length; g += 10) {
     const label = g === 0 ? 'TOP 10' : `${g + 1}〜${Math.min(g + 10, list.length)}位`;
     const sec = h('section', { class: `tier t${Math.min(g / 10, 8)}` }, h('h2', null, label, g >= 10 ? h('small', null, `TOP ${g + 10}`) : null));
     const ol = h('ol', { class: 'tier-list' });
     list.slice(g, g + 10).forEach((r, i) => {
       const rank = g + i + 1;
-      const c = BY_ID[r.id];
+      const c = V.info(r.id);
       const was = prev && prev.get(r.id);
       const mv = was ? was - rank : 0;
       ol.append(
@@ -577,7 +609,7 @@ function renderRank() {
           { class: st.pair && (st.pair.a === r.id || st.pair.b === r.id) ? 'now' : '' },
           h('span', { class: 'no' }, rank),
           badge(r.id),
-          h('span', { class: 'nm' }, c.name, h('small', null, c.series)),
+          h('span', { class: 'nm' }, c.name, h('small', null, c.sub)),
           mv ? h('span', { class: `mv ${mv > 0 ? 'up' : 'down'}` }, mv > 0 ? `↑${mv}` : `↓${-mv}`) : null,
           h('span', { class: `cnt ${r.count < 3 ? 'low' : ''}` }, `${r.count}回`)
         )
@@ -608,12 +640,12 @@ function tiersOf(list) {
   }
   return out;
 }
-const shortName = (id) => BY_ID[id].name.replace(/^Mii /, 'Mii').replace(/[&＆].*$/, '').replace(/\/.*$/, '');
+const shortName = (id) => V.info(id).short;
 
 function renderChart(main, list) {
   const st = S.st;
   main.append(
-    h('div', { class: 'chart-head' }, h('div', null, h('b', null, `判定${st.history.length}回`), st.done ? h('span', { class: 'done-tag' }, '確定') : h('span', { class: 'live-tag' }, '途中経過')), h('button', { class: 'btn sub small', onclick: () => saveChartImage(list) }, '画像で保存'))
+    h('div', { class: 'chart-head' }, h('div', null, h('b', null, `判定${V.B.history.length}回`), st.done ? h('span', { class: 'done-tag' }, '確定') : h('span', { class: 'live-tag' }, '途中経過')), h('button', { class: 'btn sub small', onclick: () => saveChartImage(list) }, '画像で保存'))
   );
   const anim = S.revealAnim;
   S.revealAnim = false;
@@ -629,7 +661,7 @@ function renderChart(main, list) {
           'div',
           { class: 'cgrid' },
           t.rows.map((r, i) =>
-            h('div', { class: 'cell', title: BY_ID[r.id].name }, h('span', { class: 'coin', style: `--c:${colorOf(r.id)}` }, initial(r.id), h('i', null, list.indexOf(r) + 1)), h('span', { class: 'cname' }, shortName(r.id)))
+            h('div', { class: 'cell', title: V.info(r.id).name }, h('span', { class: `coin ${[...initial(r.id)].length > 1 ? 'm2' : ''}`, style: `--c:${colorOf(r.id)}` }, initial(r.id), h('i', null, list.indexOf(r) + 1)), h('span', { class: 'cname' }, shortName(r.id)))
           )
         )
       )
@@ -648,7 +680,7 @@ function renderChart(main, list) {
     main.append(
       st.done
         ? h('button', { class: 'btn wide', onclick: () => S.room.finish(false) }, '対決に戻る（続きをやる）')
-        : h('button', { class: 'btn primary wide', disabled: !st.history.length, onclick: () => S.room.finish(true) }, 'おわり！このランク表を全員に出す')
+        : h('button', { class: 'btn primary wide', disabled: !V.B.history.length, onclick: () => S.room.finish(true) }, 'おわり！このランク表を全員に出す')
     );
 }
 
@@ -688,10 +720,10 @@ async function saveChartImage(list) {
   g.fillStyle = '#fff';
   g.font = F(44);
   g.textBaseline = 'top';
-  g.fillText('スマブラSP キャラランク', pad, 34);
+  g.fillText(V.isChars ? 'スマブラSP キャラtier表' : `${BY_ID[V.charId].name} 技tier表`, pad, 34);
   g.font = F(20);
   g.fillStyle = '#9a9a9a';
-  g.fillText(`スマブラtier表 ・ 判定${S.st.history.length}回 ・ ${list.length}キャラ`, pad, 92);
+  g.fillText(`スマブラtier表 ・ 判定${V.B.history.length}回 ・ ${list.length}${V.unit}`, pad, 92);
   let y = headH;
   for (const t of tiers) {
     // 帯
@@ -722,7 +754,7 @@ async function saveChartImage(list) {
       g.fill();
       g.fillStyle = '#fff';
       g.textAlign = 'center';
-      g.font = F(34);
+      g.font = F([...initial(r.id)].length > 1 ? 24 : 34);
       g.fillText(initial(r.id), cx, cy + 2);
       g.font = F(17, '700');
       g.fillStyle = '#eaeaea';
@@ -777,10 +809,10 @@ function wrapText(g, text, cx, y, maxW, lh) {
 }
 
 async function copyRanking(list) {
-  const lines = ['【スマブラtier表】スマブラSP キャラランク', `（判定${S.st.history.length}回）`];
+  const lines = [`【スマブラtier表】${V.isChars ? 'スマブラSP キャラtier表' : `${BY_ID[V.charId].name} 技tier表`}`, `（判定${V.B.history.length}回）`];
   list.forEach((r, i) => {
     if (i % 10 === 0) lines.push('', i === 0 ? '■ TOP 10' : `■ ${i + 1}〜${Math.min(i + 10, list.length)}位`);
-    lines.push(`${i + 1}. ${BY_ID[r.id].name}`);
+    lines.push(`${i + 1}. ${V.info(r.id).name}`);
   });
   const text = lines.join('\n');
   try {
@@ -821,28 +853,28 @@ function renderMembers() {
 
 // ---------- 設定（ホスト） ----------
 function renderSettings() {
-  const st = S.st;
-  const ex = new Set(st.excluded);
-  const search = h('input', { class: 'in', placeholder: 'キャラ名・シリーズでしぼりこみ', enterkeyhint: 'search', value: S.exQuery || '' });
+  const ex = new Set(V.B.excluded);
+  const search = h('input', { class: 'in', placeholder: V.isChars ? 'キャラ名・シリーズでしぼりこみ' : '技名でしぼりこみ', enterkeyhint: 'search', value: S.exQuery || '' });
   const grid = h('div', { class: 'ex-grid' });
   const draw = () => {
     const q = norm(search.value);
     grid.textContent = '';
-    for (const c of CHARS) {
-      if (q && !norm(c.name).includes(q) && !norm(c.series).includes(q)) continue;
-      const off = ex.has(c.id);
+    for (const id of V.ids) {
+      const c = V.info(id);
+      if (q && !norm(c.name).includes(q) && !norm(c.sub).includes(q)) continue;
+      const off = ex.has(id);
       grid.append(
         h(
           'button',
           {
             class: `ex ${off ? 'off' : ''}`,
             onclick: () => {
-              if (off) ex.delete(c.id);
-              else ex.add(c.id);
+              if (off) ex.delete(id);
+              else ex.add(id);
               S.room.setExcluded([...ex]);
             },
           },
-          badge(c.id),
+          badge(id),
           h('span', null, c.name),
           h('i', null, off ? '外す' : '')
         )
@@ -851,27 +883,101 @@ function renderSettings() {
   };
   search.addEventListener('input', () => ((S.exQuery = search.value), draw()));
   draw();
-  app.append(
+  const secs = [
+    subjectBar(),
     h(
-      'main',
-      { class: 'settings' },
+      'section',
+      { class: 'card' },
+      h('h2', null, `ランキングに入れる${V.unit}`, h('small', null, `${V.ids.length - ex.size}/${V.ids.length}`)),
+      h('p', { class: 'note' }, `タップで入れる／外すを切りかえ。外した${V.unit}は対決にもランキングにも出ません。`),
       h(
-        'section',
-        { class: 'card' },
-        h('h2', null, 'ランキングに入れるキャラ', h('small', null, `${CHARS.length - ex.size}/${CHARS.length}`)),
-        h('p', { class: 'note' }, 'タップで入れる／外すを切りかえ。外したキャラは対決にもランキングにも出ません。'),
-        h('div', { class: 'row tight' }, h('button', { class: 'btn sub small', onclick: () => S.room.setExcluded([]) }, '全員入れる'), h('button', { class: 'btn sub small', onclick: () => S.room.setExcluded(CHARS.filter((c) => c.series === 'Miiファイター').map((c) => c.id).concat([...ex])) }, 'Miiを外す')),
-        search,
-        grid
+        'div',
+        { class: 'row tight' },
+        h('button', { class: 'btn sub small', onclick: () => S.room.setExcluded([]) }, '全部入れる'),
+        V.isChars ? h('button', { class: 'btn sub small', onclick: () => S.room.setExcluded(CHARS.filter((c) => c.series === 'Miiファイター').map((c) => c.id).concat([...ex])) }, 'Miiを外す') : null,
+        V.isChars ? null : h('button', { class: 'btn sub small', onclick: () => S.room.setExcluded(V.ids.filter((id) => ['grab', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'final'].includes(id))) }, '投げと切りふだを外す')
       ),
+      search,
+      grid
+    ),
+  ];
+  if (!V.isChars) {
+    S.nickDraft = S.nickDraft && S.nickDraft.mode === S.st.mode ? S.nickDraft : { mode: S.st.mode, names: { ...(V.B.names || {}) } };
+    const names = S.nickDraft.names;
+    const inputs = V.ids.map((id) => {
+      const m = MOVE_BY_ID[id];
+      const inp = h('input', { class: 'in small', maxlength: 16, placeholder: m.name.replace(/（.*$/, ''), value: names[id] || '' });
+      inp.addEventListener('input', () => (names[id] = inp.value));
+      return h('label', { class: 'nick' }, badge(id, '', moveInfo(id)), h('span', null, m.name.replace(/（.*$/, '')), inp);
+    });
+    secs.push(
       h(
         'section',
         { class: 'card' },
-        h('h2', null, 'リセット'),
-        h('p', { class: 'note' }, 'これまでの判定をすべて消して、最初からやり直します。'),
-        h('button', { class: 'btn danger', disabled: !st.history.length, onclick: () => confirmSheet('判定をすべて消しますか？', `${st.history.length}回分の判定が消えます。元に戻せません。`, '消す', () => S.room.reset(), true) }, 'ランキングをリセット')
+        h('h2', null, '技の呼び名'),
+        h('p', { class: 'note' }, `${BY_ID[V.charId].name}の技に名前を付けられます（例：横B →「ファイアボール」）。空欄なら「横B」のまま表示します。`),
+        h('div', { class: 'nick-list' }, inputs),
+        h('button', { class: 'btn primary wide', onclick: () => (S.room.setNames({ ...names }), (S.nickDraft = null), toast('技の呼び名を保存しました')) }, '呼び名を保存')
       )
+    );
+  }
+  secs.push(
+    h(
+      'section',
+      { class: 'card' },
+      h('h2', null, 'リセット'),
+      h('p', { class: 'note' }, `「${V.title}」の判定をすべて消して、最初からやり直します。ほかの表は消えません。`),
+      h('button', { class: 'btn danger', disabled: !V.B.history.length, onclick: () => confirmSheet('判定をすべて消しますか？', `${V.title}の${V.B.history.length}回分の判定が消えます。元に戻せません。`, '消す', () => S.room.reset(), true) }, 'この表をリセット')
     )
+  );
+  app.append(h('main', { class: 'settings' }, secs));
+}
+
+// ---------- 表の切り替え ----------
+function subjectBar() {
+  return h(
+    'div',
+    { class: 'subject' },
+    h('span', { class: 'subj-k' }, 'いま作っている表'),
+    V.isChars ? h('b', null, 'キャラtier表') : h('b', null, badge(V.charId, '', charInfo(V.charId)), `${BY_ID[V.charId].name}の技tier表`),
+    isHost() ? h('button', { class: 'btn sub small', onclick: modeSheet }, '切り替え') : null
+  );
+}
+
+function modeSheet() {
+  const boards = S.st.boards;
+  const count = (mode) => (boards[mode] ? boards[mode].history.length : 0);
+  const search = h('input', { class: 'in', placeholder: 'キャラ名でさがす', enterkeyhint: 'search' });
+  const list = h('div', { class: 'pick-list' });
+  const draw = () => {
+    const q = norm(search.value);
+    list.textContent = '';
+    for (const c of CHARS) {
+      if (q && !norm(c.name).includes(q) && !norm(c.series).includes(q)) continue;
+      const mode = `moves:${c.id}`;
+      const n = count(mode);
+      list.append(
+        h(
+          'button',
+          { class: `pick ${S.st.mode === mode ? 'on' : ''}`, onclick: () => (S.room.setMode(mode), closeSheet(), (S.tab = 'vs'), render()) },
+          badge(c.id, '', charInfo(c.id)),
+          h('span', null, c.name, n ? h('small', { class: 'pick-n' }, `${n}回`) : null)
+        )
+      );
+    }
+  };
+  search.addEventListener('input', draw);
+  draw();
+  openSheet(
+    [
+      h('div', { class: 'sheet-title' }, 'どの表を作る？'),
+      h('button', { class: `btn ${S.st.mode === 'chars' ? 'sub' : ''} wide mode-chars`, onclick: () => (S.room.setMode('chars'), closeSheet(), (S.tab = 'vs'), render()) }, 'キャラtier表（全キャラ）', count('chars') ? h('small', null, ` ・ ${count('chars')}回`) : null),
+      h('div', { class: 'lbl' }, '技tier表：キャラを選ぶ（それぞれの進み具合は残ります）'),
+      search,
+      list,
+      h('button', { class: 'btn ghost wide', onclick: closeSheet }, 'やめる'),
+    ],
+    true
   );
 }
 
