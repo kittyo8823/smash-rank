@@ -1,4 +1,4 @@
-# 最強キャラ決定戦（smash-rank）
+# スマブラtier表（smash-rank）
 
 GitHub Pages で公開している、スマブラSPの全キャラを2択で比べてランキングを作るオンラインツール（非公式）。直下の `index.html` が公開版（1ファイルで完結）。
 ソースは `dev/`：`src/`（chars.js=キャラ一覧、rank.js=順位計算と部屋の状態、net.js=MQTT通信、main.js=画面、style.css）。

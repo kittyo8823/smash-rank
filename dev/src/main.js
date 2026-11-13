@@ -1,4 +1,4 @@
-// 最強キャラ決定戦：画面
+// スマブラtier表：画面
 import { connect, HostRoom, GuestRoom } from './net.js';
 import { normalizeCode, cleanName, NAME_MAX, MAX_PLAYERS, ratings } from './rank.js';
 import { CHARS, BY_ID, norm } from './chars.js';
@@ -88,7 +88,7 @@ const initial = (id) => {
 const badge = (id, size = '') => h('span', { class: `badge ${size}`, style: `--c:${colorOf(id)}` }, initial(id));
 
 // ---------- 状態 ----------
-const S = { room: null, st: null, tab: 'vs', key: '', lastSeq: null, lastStateAt: 0, rankView: 'chart', wasDone: null };
+const S = { room: null, st: null, tab: 'vs', key: '', lastSeq: null, lastStateAt: 0, rankView: 'chart', wasDone: null, pairSeq: null, picking: false, revealAnim: false };
 const isHost = () => S.room && S.room.isHost;
 const meId = () => S.room && S.room.me.id;
 
@@ -163,7 +163,7 @@ function renderTitle(msg) {
     h(
       'div',
       { class: 'title-wrap' },
-      h('div', { class: 'logo' }, h('div', { class: 'logo-sub' }, 'スマブラSP 全86ファイター'), h('h1', null, h('span', null, '最強キャラ'), h('span', { class: 'r' }, '決定戦')), h('p', { class: 'tag' }, '「どっちが強い？」を答えるだけで、みんなのキャラランクができあがる。')),
+      h('div', { class: 'logo' }, h('div', { class: 'logo-sub' }, 'スマブラSP 全86ファイター'), h('h1', null, h('span', null, 'スマブラ'), h('span', { class: 'r' }, 'tier表')), h('p', { class: 'tag' }, '「どっちが強い？」を答えるだけで、みんなのキャラランクができあがる。')),
       h(
         'div',
         { class: 'panel' },
@@ -236,6 +236,8 @@ function enterRoom(room) {
   S.tab = 'vs';
   S.lastSeq = null;
   S.wasDone = null;
+  S.pairSeq = null;
+  S.picking = false;
   setUrlRoom(room.code);
   if (!room.isHost) save('last', { code: room.code, at: Date.now() });
   room.onState((st) => {
@@ -245,7 +247,10 @@ function enterRoom(room) {
     // ホストが「おわり」にしたら全員ランク表へ
     if (S.wasDone !== null && st.done !== S.wasDone) {
       S.tab = st.done ? 'rank' : 'vs';
-      if (st.done) S.rankView = 'chart';
+      if (st.done) {
+        S.rankView = 'chart';
+        S.revealAnim = true;
+      }
     }
     S.wasDone = st.done;
     if (!room.isHost && !st.players.some((p) => p.id === room.me.id)) return leaveToTitle('部屋から外れました');
@@ -293,7 +298,7 @@ function topBar() {
   return h(
     'header',
     { class: 'top' },
-    h('div', { class: 'brand' }, '最強キャラ', h('em', null, '決定戦')),
+    h('div', { class: 'brand' }, 'スマブラ', h('em', null, 'tier表')),
     h('button', { class: 'code-chip', onclick: share }, h('small', null, '部屋'), S.st.code),
     h(
       'button',
@@ -324,9 +329,9 @@ function tabs() {
 }
 async function share() {
   const url = inviteUrl(S.st.code);
-  const text = `最強キャラ決定戦（スマブラ）で一緒にランク作ろう！ 部屋コード：${S.st.code}`;
+  const text = `スマブラtier表で一緒にキャラランク作ろう！ 部屋コード：${S.st.code}`;
   try {
-    if (navigator.share) return await navigator.share({ title: '最強キャラ決定戦', text, url });
+    if (navigator.share) return await navigator.share({ title: 'スマブラtier表', text, url });
   } catch (e) {
     if (e && e.name === 'AbortError') return;
   }
@@ -361,15 +366,21 @@ function renderVs() {
     const p = st.players.find((x) => x.id === pid);
     if (p && tally[v]) tally[v].push(p.name);
   }
-  const goal = Math.round(active * 3.5);
+  const rough = Math.round(active * 1.5);
+  const good = Math.round(active * 3.5);
+  const max = good * 1.15;
+  const left = n < rough ? ['ざっくりランクまで', rough - n] : n < good ? ['かなり正確まで', good - n] : null;
+  const freshJudge = !!(st.last && S.lastSeq !== null && S.lastSeq !== st.last.seq);
+  const newPair = !!(pr && S.pairSeq !== null && S.pairSeq !== pr.seq);
+  S.pairSeq = pr ? pr.seq : S.pairSeq;
   const main = h('main', { class: 'vs-main' });
   main.append(
     h(
       'div',
       { class: 'meter' },
-      h('div', { class: 'meter-text' }, h('b', null, n), '回判定', h('span', null, `1キャラ平均 ${avg.toFixed(1)}回`)),
-      h('div', { class: 'meter-bar' }, h('i', { style: `width:${Math.min(100, (n / goal) * 100)}%` }), h('span', { class: 'mark', style: 'left:43%' }), h('span', { class: 'mark', style: 'left:86%' })),
-      h('div', { class: 'meter-legend' }, h('span', null, 'ざっくり'), h('span', null, 'かなり正確'))
+      h('div', { class: 'meter-text' }, h('b', null, n), '回判定', h('span', { class: `left ${left ? '' : 'enough'}` }, left ? [left[0], ' あと', h('em', null, left[1]), '回'] : 'もう十分！いつでも「おわり」にできます')),
+      h('div', { class: 'meter-bar' }, h('i', { style: `width:${Math.min(100, (n / max) * 100)}%` }), h('span', { class: 'mark', style: `left:${(rough / max) * 100}%` }), h('span', { class: 'mark', style: `left:${(good / max) * 100}%` })),
+      h('div', { class: 'meter-legend' }, h('span', { style: `left:${(rough / max) * 100}%` }, `ざっくり ${rough}`), h('span', { style: `left:${(good / max) * 100}%` }, `かなり正確 ${good}`))
     )
   );
   if (!pr) {
@@ -381,7 +392,7 @@ function renderVs() {
       const chosen = myVote === k;
       return h(
         'button',
-        { class: `fighter ${k} ${chosen ? 'chosen' : ''}`, style: `--c:${colorOf(id)}`, onclick: () => pick(k) },
+        { class: `fighter ${k} ${chosen ? 'chosen' : ''} ${newPair ? 'enter' : ''}`, style: `--c:${colorOf(id)}`, onclick: () => pick(k) },
         h('span', { class: 'f-rank' }, count.get(id) ? `いま ${pos.get(id)}位` : 'はじめての対決', h('small', null, `比較${count.get(id) || 0}回`)),
         badge(id, 'xl'),
         h('span', { class: 'f-name' }, c.name),
@@ -391,7 +402,7 @@ function renderVs() {
     };
     main.append(
       h('div', { class: 'q' }, host ? 'どっちが強い？' : 'どっちが強いと思う？', h('small', null, host ? 'タップで決定（あなたの判定がランクに入ります）' : 'タップで投票（決めるのはホスト）')),
-      h('div', { class: 'arena' }, side('a'), h('div', { class: 'vs' }, 'VS'), side('b')),
+      h('div', { class: 'arena' }, side('a'), h('div', { class: `vs ${newPair ? 'enter' : ''}` }, 'VS'), side('b'), freshJudge && !host ? stamp(st.last) : null),
       h('button', { class: `btn even ${myVote === 'd' ? 'chosen' : ''}`, onclick: () => pick('d') }, '同じくらい', tally.d.length ? h('small', null, ` ${tally.d.length}票`) : null)
     );
     if (host)
@@ -408,6 +419,7 @@ function renderVs() {
     if (st.done)
       main.prepend(h('div', { class: 'done-banner' }, 'ランク表を発表中！', h('button', { class: 'btn sub small', onclick: () => ((S.tab = 'rank'), (S.rankView = 'chart'), render()) }, '見る')));
   }
+  if (freshJudge && n > 0 && n % 50 === 0) milestone(n, list);
   // 直前の判定
   if (st.last) {
     const L = st.last;
@@ -431,11 +443,55 @@ function renderVs() {
 }
 
 function pick(k) {
-  if (isHost()) S.room.judge(k);
-  else {
+  if (isHost()) {
+    if (S.picking) return;
+    S.picking = true;
+    // 押した瞬間に勝った側を大きく、負けた側を沈める → 少しだけ見せてから次へ
+    const A = document.querySelector('.fighter.a');
+    const B = document.querySelector('.fighter.b');
+    if (k === 'd') [A, B].forEach((e) => e && e.classList.add('even-hit'));
+    else {
+      (k === 'a' ? A : B)?.classList.add('win');
+      (k === 'a' ? B : A)?.classList.add('lose');
+    }
+    try {
+      navigator.vibrate && navigator.vibrate(12);
+    } catch {
+      /* ignore */
+    }
+    setTimeout(() => {
+      S.picking = false;
+      S.room.judge(k);
+    }, 190);
+    return;
+  }
+  {
     S.room.vote(k);
     toast(k === 'd' ? '「同じくらい」に投票しました' : `${BY_ID[S.st.pair[k]].name} に投票しました`);
   }
+}
+
+/** 参加者の画面：ホストが決めた瞬間のハンコ */
+function stamp(L) {
+  const w = L.r === 1 ? L.a : L.r === 0 ? L.b : null;
+  return h('div', { class: 'stamp' }, w ? [h('small', null, 'ホストの判定'), BY_ID[w].name, h('b', null, 'WIN!')] : [h('small', null, 'ホストの判定'), h('b', null, '互角！')]);
+}
+
+/** 50回ごとの節目：いまの上位をちらっと見せる */
+function milestone(n, list) {
+  document.querySelector('.milestone')?.remove();
+  const msg = n >= 300 ? 'かなり正確になってきた！' : n >= 150 ? 'ランクが固まってきた！' : n >= 100 ? 'TOP10が見えてきた！' : '上位が見えはじめた！';
+  const el = h(
+    'div',
+    { class: 'milestone' },
+    h('div', { class: 'ms-n' }, h('b', null, n), '回突破！'),
+    h('div', { class: 'ms-msg' }, msg),
+    h('ol', { class: 'ms-top' }, list.slice(0, 5).map((r, i) => h('li', null, h('span', { class: 'no' }, i + 1), badge(r.id), h('span', null, BY_ID[r.id].name))))
+  );
+  el.addEventListener('click', () => el.remove());
+  document.body.append(el);
+  setTimeout(() => el.classList.add('out'), 2600);
+  setTimeout(() => el.remove(), 3000);
 }
 
 function choosePairSheet() {
@@ -559,12 +615,15 @@ function renderChart(main, list) {
   main.append(
     h('div', { class: 'chart-head' }, h('div', null, h('b', null, `判定${st.history.length}回`), st.done ? h('span', { class: 'done-tag' }, '確定') : h('span', { class: 'live-tag' }, '途中経過')), h('button', { class: 'btn sub small', onclick: () => saveChartImage(list) }, '画像で保存'))
   );
-  const board = h('div', { class: 'chart' });
-  for (const t of tiersOf(list)) {
+  const anim = S.revealAnim;
+  S.revealAnim = false;
+  const board = h('div', { class: `chart ${anim ? 'reveal' : ''}` });
+  const tiers = tiersOf(list);
+  tiers.forEach((t, ti) => {
     board.append(
       h(
         'section',
-        { class: 'crow' },
+        { class: `crow ${ti === 0 ? 'crow-top' : ''}`, style: anim ? `animation-delay:${(tiers.length - 1 - ti) * 0.4}s` : '' },
         h('div', { class: 'clabel', style: `--a:${t.color[0]};--b:${t.color[1]}` }, t.label),
         h(
           'div',
@@ -575,14 +634,32 @@ function renderChart(main, list) {
         )
       )
     );
-  }
+  });
   main.append(board);
+  if (anim) {
+    // 下の段から順に出しながら画面も上へ。最後にTOP10で紙吹雪
+    const rows = [...board.children];
+    rows.forEach((row, ti) => {
+      setTimeout(() => row.isConnected && row.scrollIntoView({ behavior: 'smooth', block: ti === 0 ? 'center' : 'nearest' }), (tiers.length - 1 - ti) * 400);
+    });
+    setTimeout(() => board.isConnected && confetti(), (tiers.length - 1) * 400 + 350);
+  }
   if (isHost())
     main.append(
       st.done
         ? h('button', { class: 'btn wide', onclick: () => S.room.finish(false) }, '対決に戻る（続きをやる）')
         : h('button', { class: 'btn primary wide', disabled: !st.history.length, onclick: () => S.room.finish(true) }, 'おわり！このランク表を全員に出す')
     );
+}
+
+function confetti() {
+  const box = h('div', { class: 'confetti' });
+  const cols = ['#e5262b', '#ffd400', '#1d5bd8', '#1f9d55', '#ffffff', '#f29a00'];
+  for (let i = 0; i < 60; i++) {
+    box.append(h('i', { style: `left:${Math.random() * 100}%;background:${cols[i % cols.length]};animation-delay:${Math.random() * 0.4}s;animation-duration:${1.8 + Math.random() * 1.4}s;--r:${Math.random() * 720 - 360}deg;--x:${Math.random() * 80 - 40}px` }));
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), 4000);
 }
 
 /** ランク表を画像（PNG）にする */
@@ -614,7 +691,7 @@ async function saveChartImage(list) {
   g.fillText('スマブラSP キャラランク', pad, 34);
   g.font = F(20);
   g.fillStyle = '#9a9a9a';
-  g.fillText(`最強キャラ決定戦 ・ 判定${S.st.history.length}回 ・ ${list.length}キャラ`, pad, 92);
+  g.fillText(`スマブラtier表 ・ 判定${S.st.history.length}回 ・ ${list.length}キャラ`, pad, 92);
   let y = headH;
   for (const t of tiers) {
     // 帯
@@ -700,7 +777,7 @@ function wrapText(g, text, cx, y, maxW, lh) {
 }
 
 async function copyRanking(list) {
-  const lines = ['【最強キャラ決定戦】スマブラSP キャラランク', `（判定${S.st.history.length}回）`];
+  const lines = ['【スマブラtier表】スマブラSP キャラランク', `（判定${S.st.history.length}回）`];
   list.forEach((r, i) => {
     if (i % 10 === 0) lines.push('', i === 0 ? '■ TOP 10' : `■ ${i + 1}〜${Math.min(i + 10, list.length)}位`);
     lines.push(`${i + 1}. ${BY_ID[r.id].name}`);

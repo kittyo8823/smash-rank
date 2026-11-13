@@ -16,7 +16,7 @@ const html = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f2efe8">
-<title>最強キャラ決定戦</title>
+<title>スマブラtier表</title>
 <meta name="description" content="スマブラSPの全キャラを「どっちが強い？」で比べてランキングを作る非公式ファンツール">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

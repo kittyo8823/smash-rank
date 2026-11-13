@@ -71,6 +71,24 @@ try {
   await g1.waitForFunction(() => [...document.querySelectorAll('.f-name')].map((x) => x.textContent).join('|') === 'ドクターマリオ|ソラ');
   console.log('choose ok');
   await host.click('.fighter.b');
+  await host.waitForFunction(() => !document.querySelector('.f-name') || document.querySelector('.meter-text b').textContent === '31');
+  // 押した瞬間の手応え（ホスト）と、参加者のハンコ
+  await host.click('.fighter.a');
+  await host.waitForTimeout(90);
+  await shot(host, '02b-host-pop');
+  await g2.waitForSelector('.stamp');
+  await g2.waitForTimeout(150);
+  await shot(g2, '03b-guest-stamp');
+  // 50回目の節目
+  while (+(await host.textContent('.meter-text b')) < 50) {
+    const cur = await nm(host);
+    await host.click('.fighter.a');
+    await host.waitForFunction((b) => [...document.querySelectorAll('.f-name')].map((x) => x.textContent).join('|') !== b, cur);
+  }
+  await g1.waitForSelector('.milestone');
+  await g1.waitForTimeout(400);
+  await shot(g1, '03c-milestone');
+  console.log('milestone ok', await g1.textContent('.ms-msg'));
   // ランキング
   await g1.click('.tabs button:has-text("ランキング")');
   await g1.waitForSelector('.chart');
@@ -96,7 +114,9 @@ try {
   await host.click('text=おわり！ランク表を出す');
   await host.click('.sheet-panel .btn.primary');
   await g2.waitForSelector('.chart .done-tag, .chart-head .done-tag');
-  await g2.waitForTimeout(300);
+  await g2.waitForTimeout(1200);
+  await shot(g2, '08a-chart-revealing');
+  await g2.waitForTimeout(2800);
   await shot(g2, '08-chart-done');
   await g2.screenshot({ path: `${SHOT}/08b-chart-full.png`, fullPage: true });
   console.log('finish ok, guest sees chart');
@@ -111,10 +131,10 @@ try {
   await host.reload();
   await host.click('text=つづきから');
   await host.waitForSelector('.fighter');
-  console.log('resume', await host.textContent('.meter-text b'));
+  console.log('resume', await host.textContent('.meter-text b'), await host.textContent('.brand'));
   await g2.click('.tabs button:has-text("対決")');
   await host.click('.fighter.a');
-  await g2.waitForFunction(() => document.querySelector('.meter-text b').textContent === '32');
+  await g2.waitForFunction(() => document.querySelector('.meter-text b').textContent === '51');
   console.log('after resume synced');
   // 閉じる
   await host.click('.top .linkbtn');
