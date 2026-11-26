@@ -2,6 +2,8 @@
 // アプリに入っているのはアイコンの絵ではなく、12×12マスまで縮めて明るさをそろえた「特徴」の数字だけ。
 import { BY_ID } from './chars.js';
 import PROTOS from './icon-protos.json';
+// キャラごとの「ほかのキャラのアイコンにどれくらい似てしまうか」（平均, ばらつき）。色の薄いアイコンは何にでも似やすいので、その分を差し引いて比べる
+import STATS from './icon-stats.json';
 
 export const GRID = 12;
 
@@ -68,12 +70,15 @@ export const KNOWN = new Set(decoded.map((p) => p.id));
  * どのキャラかを当てる。位置と大きさを少しずつ変えて比べて、一番似ているものを採用。
  * 戻り値：似ている順の [{ id, sim }]
  */
-export function identify(src, num) {
+export function identify(src, num, narrow = false) {
   const best = new Map();
-  // 数字の読み取り位置の誤差やカメラの傾きがあるので、位置と大きさを少しずつ変えて探す
-  for (let dx = -1.5; dx <= 1.5001; dx += 0.25)
-    for (const dy of [-0.5, -0.25, 0, 0.25, 0.5])
-      for (const ds of [0.9, 1, 1.1]) {
+  // 数字の読み取り位置の誤差やカメラの傾きがあるので、位置と大きさを少しずつ変えて探す（narrow：位置がほぼ分かっているときは狭く・速く）
+  const DX = narrow ? [-0.5, -0.25, 0, 0.25, 0.5] : [-1.5, -1.25, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5];
+  const DY = narrow ? [-0.25, 0, 0.25] : [-0.5, -0.25, 0, 0.25, 0.5];
+  const DS = narrow ? [0.95, 1.05] : [0.9, 1, 1.1];
+  for (const dx of DX)
+    for (const dy of DY)
+      for (const ds of DS) {
       const v = iconVector(src, iconBox(num, dx, dy, ds));
       for (const p of decoded) {
         let s = 0;
@@ -81,14 +86,20 @@ export function identify(src, num) {
         if (s > (best.get(p.id) ?? -9)) best.set(p.id, s);
       }
       }
-  return [...best.entries()].map(([id, sim]) => ({ id, sim })).sort((a, b) => b.sim - a.sim);
+  return [...best.entries()]
+    .map(([id, sim]) => {
+      const st = STATS[id] || [0.5, 0.15];
+      return { id, sim, z: (sim - st[0]) / st[1] };
+    })
+    .sort((a, b) => b.z - a.z);
 }
 
 /** 自信を持って決められるか */
 export function confident(list) {
   if (!list.length) return false;
   const [a, b] = list;
-  return a.sim >= 0.85 && (!b || a.sim - b.sim >= 0.1);
+  // 「ほかのキャラより飛びぬけて似ている」ときだけ決める（学習に使った224コマで、間違い0になる基準）
+  return a.z >= 3 && (!b || a.z - b.z >= 1) && a.sim >= 0.7;
 }
 
 export const nameOf = (id) => (BY_ID[id] ? BY_ID[id].name : id);
@@ -96,6 +107,11 @@ export const nameOf = (id) => (BY_ID[id] ? BY_ID[id].name : id);
 /** 何コマか分の判定をまとめる（キャラごとに似ている度を平均） */
 export function combine(lists) {
   const sum = new Map();
-  for (const l of lists) for (const { id, sim } of l) sum.set(id, (sum.get(id) || 0) + sim);
-  return [...sum.entries()].map(([id, s]) => ({ id, sim: s / lists.length })).sort((a, b) => b.sim - a.sim);
+  for (const l of lists) for (const { id, sim, z } of l) {
+    const o = sum.get(id) || { sim: 0, z: 0 };
+    o.sim += sim;
+    o.z += z;
+    sum.set(id, o);
+  }
+  return [...sum.entries()].map(([id, o]) => ({ id, sim: o.sim / lists.length, z: o.z / lists.length })).sort((a, b) => b.z - a.z);
 }

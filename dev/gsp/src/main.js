@@ -3,7 +3,7 @@ import { CHARS, BY_ID, norm } from './chars.js';
 import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, thresholdOf, pickGsp } from './tiers.js';
 import { getWorker, prepare, readVote, readAnywhere } from './ocr.js';
 import { identify, confident } from './icons.js';
-import { loadVideo, seek, grab, findSegments, readSegments } from './video.js';
+import { loadVideo, seek, grab, findSegments, readSegments, makeTracker } from './video.js';
 
 // ---------- 小道具 ----------
 const h = (tag, attrs, ...kids) => {
@@ -687,11 +687,19 @@ async function runVideo(v, box, num) {
   const msg = h('p', { class: 'sheet-body' }, '動画を再生して、キャラの切り替わりを探しています…');
   v.className = 'run-video';
   openSheet([h('div', { class: 'sheet-title' }, '読み取り中'), v, h('div', { class: 'run-bar' }, bar), msg, h('p', { class: 'note' }, 'このまま画面を開いておいてください')]);
-  const segs = await findSegments(v, box, num, (p) => (bar.style.width = `${Math.round(p * 50)}%`));
+  // 位置合わせしたコマで、手ぶれ追跡の目印（「世界戦闘力」の文字のあたり）を覚える
+  const tracker = load('notrack') ? null : makeTracker(v, num);
+  const segs = await findSegments(v, box, num, (p) => (bar.style.width = `${Math.round(p * 50)}%`), tracker);
   msg.textContent = `${segs.length}か所の切り替わりを見つけました。キャラと数字を判定しています…`;
-  const res = await readSegments(v, box, segs, (p) => {
-    bar.style.width = `${50 + Math.round(p * 50)}%`;
-  });
+  const res = await readSegments(
+    v,
+    box,
+    segs,
+    (p) => {
+      bar.style.width = `${50 + Math.round(p * 50)}%`;
+    },
+    tracker
+  );
   showVideoResults(res);
 }
 
