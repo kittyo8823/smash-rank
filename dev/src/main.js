@@ -205,6 +205,14 @@ function renderTitle(msg) {
         err,
         resume.length ? h('div', { class: 'resume-box' }, resume) : null
       ),
+      h(
+        'a',
+        { class: 'tool-link', href: 'gsp/' },
+        h('span', { class: 'tl-k' }, 'ひとりで使う'),
+        h('b', null, '段位スキャナー'),
+        h('span', { class: 'tl-d' }, '世界戦闘力をカメラで読み取って、全キャラの段位を一目でチェック'),
+        h('span', { class: 'tl-go' }, '›')
+      ),
       h('details', { class: 'rules' }, h('summary', null, '使いかた'), rulesBody()),
       h('p', { class: 'foot' }, '非公式のファンツールです。任天堂・各権利者とは関係ありません。')
     )
