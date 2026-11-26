@@ -54,9 +54,6 @@ const L = [
   ['rosa', 'ロゼッタ&チコ', 'マリオ'],
   ['mac', 'リトル・マック', 'パンチアウト!!'],
   ['greninja', 'ゲッコウガ', 'ポケモン'],
-  ['miibrawler', 'Mii 格闘タイプ', 'Miiファイター'],
-  ['miisword', 'Mii 剣術タイプ', 'Miiファイター'],
-  ['miigunner', 'Mii 射撃タイプ', 'Miiファイター'],
   ['palutena', 'パルテナ', 'パルテナの鏡'],
   ['pacman', 'パックマン', 'パックマン'],
   ['robin', 'ルフレ', 'ファイアーエムブレム'],
@@ -87,6 +84,9 @@ const L = [
   ['aegis', 'ホムラ/ヒカリ', 'ゼノブレイド'],
   ['kazuya', 'カズヤ', '鉄拳'],
   ['sora', 'ソラ', 'キングダム ハーツ'],
+  ['miibrawler', 'Mii 格闘タイプ', 'Miiファイター'],
+  ['miisword', 'Mii 剣術タイプ', 'Miiファイター'],
+  ['miigunner', 'Mii 射撃タイプ', 'Miiファイター'],
 ];
 
 export const CHARS = L.map(([id, name, series], i) => ({ id, name, series, no: i + 1 }));
