@@ -10,9 +10,10 @@ const srv = await serve(18934);
 const b = await chromium.launch();
 const results = [];
 // 手ぶれ・ずれ：数字の中心をガイドの中心からずらす量と、拡大率
-for (const [dx, dy, scale, rot] of [[0, 0, 2.4, 0], [60, 20, 2.2, 0.02], [-40, -25, 2.7, -0.03], [0, 30, 2.0, 0.01]]) {
+for (const [dx, dy, scale, rot] of [[0, 0, 1.8, 0], [-60, 20, 1.6, 0.02], [-40, -15, 2.0, -0.03], [0, 30, 1.7, 0.01], [140, 0, 1.9, 0]]) {
   const ctx = await b.newContext({ ...devices['iPhone 13'] });
   await ctx.addInitScript(([dx, dy, scale, rot]) => {
+    localStorage.setItem('gspscan.auto', 'false');
     const img = new Image();
     img.src = '/fixture-bayo.jpg';
     const cv = document.createElement('canvas');
@@ -22,7 +23,7 @@ for (const [dx, dy, scale, rot] of [[0, 0, 2.4, 0], [60, 20, 2.2, 0.02], [-40, -
       g.fillStyle = '#000'; g.fillRect(0, 0, 1280, 960);
       if (img.complete) {
         g.save();
-        g.translate(640 + dx, 480 + dy); g.rotate(rot); g.scale(scale, scale); g.translate(-1805, -985);
+        g.translate(1171 - 140 * scale + dx, 475 + dy); g.rotate(rot); g.scale(scale, scale); g.translate(-1805, -985);
         g.drawImage(img, 0, 0);
         g.restore();
         const d = g.getImageData(0, 0, 1280, 960); const a = d.data;

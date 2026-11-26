@@ -10,6 +10,7 @@ const errors = [];
 const ctx = await browser.newContext({ ...devices['iPhone 13'] });
 // テレビ画面をカメラで撮っている状況を、キャンバスの映像で再現する
 await ctx.addInitScript(() => {
+  localStorage.setItem('gspscan.auto', 'false'); // この映像にはアイコンが無いので順番モードで試す
   window.__num = '12,345,678';
   const cv = document.createElement('canvas');
   cv.width = 1280; cv.height = 960;
@@ -25,7 +26,9 @@ await ctx.addInitScript(() => {
     g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(150, 380, 980, 200);
     g.fillStyle = '#ffe9a0'; g.font = 'bold 44px sans-serif'; g.fillText('世界戦闘力', 190, 440);
     g.fillStyle = '#ffffff'; g.font = 'bold 104px sans-serif'; g.shadowColor = '#000'; g.shadowBlur = 6;
-    g.fillText(window.__num, 300, 545);
+    g.textAlign = 'right';
+    g.fillText(window.__num, 1170, 545);
+    g.textAlign = 'left';
     g.restore();
     // ノイズとモアレっぽい縞
     const img = g.getImageData(0, 0, 1280, 960); const d = img.data;

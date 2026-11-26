@@ -63,6 +63,7 @@ export function prepare(src, crop = null, targetH = 96, binarize = true, adaptiv
   if (!binarize) {
     for (let i = 0, j = 0; i < d.length; i += 4, j++) d[i] = d[i + 1] = d[i + 2] = lum[j];
     g.putImageData(img, 0, 0);
+    cv.map = { ox: sx, oy: sy, s: scale, pad: 0 };
     return cv;
   }
   // 大津の二値化
@@ -137,6 +138,8 @@ export function prepare(src, crop = null, targetH = 96, binarize = true, adaptiv
   o.fillRect(0, 0, out.width, out.height);
   o.drawImage(cv, pad, pad);
   out.pad = pad;
+  // 切り出した画像の座標 → 元画像の座標に戻すための情報
+  out.map = { ox: sx, oy: sy, s: scale, pad };
   return out;
 }
 
@@ -145,7 +148,86 @@ export async function readLine(canvas) {
   const w = await getWorker();
   await w.setParameters({ tessedit_pageseg_mode: '7' });
   const { data } = await w.recognize(canvas);
-  return { value: pickGsp(data.text), text: data.text.trim(), conf: data.confidence };
+  return { value: pickGsp(data.text), text: data.text.trim(), conf: data.confidence, bbox: inkBox(canvas) || numberBox(data, canvas.map) };
+}
+
+/**
+ * 白黒にした画像から、数字の文字のかたまりの位置を直接さがす（文字認識の箱は余計なものを含みやすいので）。
+ * 一番太い横の帯 → その中で一番インクの多い横のかたまり
+ */
+function inkBox(cv) {
+  const map = cv.map;
+  if (!map || !map.pad) return null;
+  const W = cv.width;
+  const H = cv.height;
+  const d = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const dark = (x, y) => d[(y * W + x) * 4] < 128;
+  const rows = new Array(H).fill(0);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (dark(x, y)) rows[y]++;
+  const minRow = Math.max(2, W * 0.02);
+  let best = null;
+  for (let y = 0; y < H; ) {
+    if (rows[y] < minRow) {
+      y++;
+      continue;
+    }
+    let y1 = y;
+    let ink = 0;
+    while (y1 < H && rows[y1] >= minRow) ink += rows[y1++];
+    if (!best || ink > best.ink) best = { y0: y, y1, ink };
+    y = y1;
+  }
+  if (!best || best.y1 - best.y0 < 6) return null;
+  const bh = best.y1 - best.y0;
+  const cols = new Array(W).fill(0);
+  for (let x = 0; x < W; x++) for (let y = best.y0; y < best.y1; y++) if (dark(x, y)) cols[x]++;
+  // 隙間が文字の高さの0.6倍より広いところで区切って、一番インクの多いかたまりを数字とみなす
+  const groups = [];
+  let cur = null;
+  let gap = 0;
+  for (let x = 0; x < W; x++) {
+    if (cols[x] > 0) {
+      if (!cur || gap > bh * 0.6) {
+        cur = { x0: x, x1: x, ink: 0 };
+        groups.push(cur);
+      }
+      cur.x1 = x;
+      cur.ink += cols[x];
+      gap = 0;
+    } else gap++;
+  }
+  // 文字らしいかたまり：横長で、中がスカスカ（べったり塗られた背景の板などは除く）
+  const texty = groups.filter((x) => {
+    const w = x.x1 - x.x0 + 1;
+    const fill = x.ink / (w * bh);
+    return w >= bh * 3 && w <= bh * 14 && fill < 0.6;
+  });
+  if (!texty.length) return null;
+  texty.sort((a, b) => b.ink - a.ink);
+  const g = texty[0];
+  const to = (px, o) => o + (px - map.pad) / map.s;
+  return { x0: to(g.x0, map.ox), y0: to(best.y0, map.oy), x1: to(g.x1 + 1, map.ox), y1: to(best.y1, map.oy) };
+}
+
+/** 数字の単語が元画像のどこにあったか（アイコンの位置を出すのに使う） */
+function numberBox(data, map) {
+  if (!map) return null;
+  const all = (data.words || []).filter((x) => (x.text.match(/\d/g) || []).length >= 2);
+  if (!all.length) return null;
+  all.sort((a, b) => (b.text.match(/\d/g) || []).length - (a.text.match(/\d/g) || []).length);
+  const main = all[0];
+  const hh = (x) => x.bbox.y1 - x.bbox.y0;
+  const mid = (x) => (x.bbox.y0 + x.bbox.y1) / 2;
+  // 高さと縦位置は「一番数字の多い単語」で決める（ゴミの混じった大きな箱に引っぱられないように）
+  const H = hh(main);
+  const ws = all.filter((x) => Math.abs(mid(x) - mid(main)) < H * 0.6 && hh(x) > H * 0.7 && hh(x) < H * 1.3);
+  const to = (px, o) => o + (px - map.pad) / map.s;
+  return {
+    x0: to(Math.min(...ws.map((x) => x.bbox.x0)), map.ox),
+    y0: to(main.bbox.y0, map.oy),
+    x1: to(Math.max(...ws.map((x) => x.bbox.x1)), map.ox),
+    y1: to(main.bbox.y1, map.oy),
+  };
 }
 
 /** 画像全体から探す（スクショの読み込み用） */
@@ -158,11 +240,11 @@ export async function readAnywhere(canvas) {
   const found = [];
   for (const l of data.lines || []) {
     const v = pickGsp(l.text);
-    if (v && v >= 100000 && /\d[,.]\s?\d{3}[,.]\s?\d{3}/.test(l.text.replace(/\s/g, ''))) found.push({ v, y: l.bbox.y0, x: l.bbox.x0 });
+    if (v && v >= 100000 && /\d[,.]\s?\d{3}[,.]\s?\d{3}/.test(l.text.replace(/\s/g, ''))) found.push({ v, y: l.bbox.y0, x: l.bbox.x0, line: l });
   }
-  if (!found.length) return { value: pickGsp(data.text), text: data.text.trim(), count: 0 };
+  if (!found.length) return { value: pickGsp(data.text), text: data.text.trim(), count: 0, bbox: null };
   found.sort((a, b) => a.y - b.y);
-  return { value: found[0].v, text: data.text.trim(), count: found.length };
+  return { value: found[0].v, text: data.text.trim(), count: found.length, bbox: numberBox({ words: found[0].line.words || [] }, canvas.map) };
 }
 
 /**
@@ -225,15 +307,17 @@ export async function readVote(src, crop) {
   ];
   const counts = new Map();
   const seen = [];
+  const boxes = new Map();
   for (const [hh, adaptive] of variants) {
     const r = await readLine(prepare(src, crop, hh, true, adaptive));
     seen.push(r.value);
     if (r.value) counts.set(r.value, (counts.get(r.value) || 0) + 1);
+    if (r.value && r.bbox && !boxes.has(r.value)) boxes.set(r.value, r.bbox);
     // 先に2票そろったら、残りは読まずに決める
     const best = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-    if (best.length && best[0][1] >= 2 && (best.length < 2 || best[0][1] > best[1][1])) return { value: best[0][0], votes: best[0][1], seen };
+    if (best.length && best[0][1] >= 2 && (best.length < 2 || best[0][1] > best[1][1])) return { value: best[0][0], votes: best[0][1], seen, bbox: boxes.get(best[0][0]) || null };
   }
   const best = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  if (best.length && best[0][1] >= 2 && (best.length < 2 || best[0][1] > best[1][1])) return { value: best[0][0], votes: best[0][1], seen };
+  if (best.length && best[0][1] >= 2 && (best.length < 2 || best[0][1] > best[1][1])) return { value: best[0][0], votes: best[0][1], seen, bbox: boxes.get(best[0][0]) || null };
   return { value: null, votes: 0, seen };
 }

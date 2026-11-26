@@ -2,6 +2,7 @@
 import { CHARS, BY_ID, norm } from './chars.js';
 import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, thresholdOf, pickGsp } from './tiers.js';
 import { getWorker, prepare, readVote, readAnywhere } from './ocr.js';
+import { identify, confident } from './icons.js';
 
 // ---------- 小道具 ----------
 const h = (tag, attrs, ...kids) => {
@@ -87,6 +88,10 @@ const S = {
   lastAccepted: null,
   candidate: null,
   ocrReady: false,
+  auto: load('auto', true), // アイコンでキャラを自動判定する（オフなら順番モード）
+  unsure: 0,
+  lastAsked: null,
+  lastId: load('lastId', null),
 };
 function currentBorderSource() {
   const manual = load('border');
@@ -269,33 +274,49 @@ function renderScan() {
     'div',
     { class: 'cam' },
     video,
-    h('div', { class: 'guide', id: 'guide' }, h('span', null, '右下のいちばん上の数字をこの枠に')),
-    S.stream ? null : h('div', { class: 'cam-off' }, h('button', { class: 'btn primary big', onclick: startCamera }, 'カメラを起動'), h('p', null, 'キャラ選択画面の右下に数字が3つ並んでいます。そのいちばん上（そのキャラの世界戦闘力）を、黄色い枠に合わせて写してください。'))
+    h('div', { class: 'icon-mark' }, h('span', null, 'アイコン')),
+    h('div', { class: 'guide', id: 'guide' }, h('span', null, 'いちばん上の数字')),
+    S.stream ? null : h('div', { class: 'cam-off' }, h('button', { class: 'btn primary big', onclick: startCamera }, 'カメラを起動'), h('p', null, 'キャラ選択画面の右下に数字が3つ並んでいます。そのいちばん上（そのキャラの世界戦闘力）を黄色い枠に、その左のキャラアイコンを点線の枠に合わせて写してください。'))
   );
+  const last = S.lastId && BY_ID[S.lastId] ? S.lastId : null;
   main.append(
-    h(
-      'div',
-      { class: 'now' },
-      h('button', { class: 'nav-btn', onclick: () => move(-1), 'aria-label': '前のキャラ' }, '‹'),
-      h(
-        'button',
-        { class: 'who', onclick: pickSheet },
-        h('small', null, `${S.cursor + 1} / ${CHARS.length}　（登録 ${done}）`),
-        h('span', null, badge(c.id), c.name),
-        h('small', { class: 'cur' }, S.data[c.id] ? `いま ${fmt(S.data[c.id].gsp)}` : 'Switchでこのキャラにカーソルを合わせて')
-      ),
-      h('button', { class: 'nav-btn', onclick: () => move(1), 'aria-label': '次のキャラ' }, '›')
-    ),
+    S.auto
+      ? h(
+          'div',
+          { class: 'now auto' },
+          h(
+            'div',
+            { class: 'who' },
+            h('small', null, `キャラは自動で判定（登録 ${done} / ${CHARS.length}）`),
+            last ? h('span', null, badge(last), BY_ID[last].name) : h('span', { class: 'muted' }, 'まだ読み取っていません'),
+            h('small', { class: 'cur' }, last && S.data[last] ? `${fmt(S.data[last].gsp)} で登録` : 'Switchで好きなキャラにカーソルを合わせて')
+          ),
+          h('button', { class: 'nav-btn mode', onclick: () => ((S.auto = false), save('auto', false), render()) }, '順番', h('small', null, 'モード'))
+        )
+      : h(
+          'div',
+          { class: 'now' },
+          h('button', { class: 'nav-btn', onclick: () => move(-1), 'aria-label': '前のキャラ' }, '‹'),
+          h(
+            'button',
+            { class: 'who', onclick: pickSheet },
+            h('small', null, `${S.cursor + 1} / ${CHARS.length}　（登録 ${done}）`),
+            h('span', null, badge(c.id), c.name),
+            h('small', { class: 'cur' }, S.data[c.id] ? `いま ${fmt(S.data[c.id].gsp)}` : 'Switchでこのキャラにカーソルを合わせて')
+          ),
+          h('button', { class: 'nav-btn', onclick: () => move(1), 'aria-label': '次のキャラ' }, '›'),
+          h('button', { class: 'nav-btn mode', onclick: () => ((S.auto = true), save('auto', true), render()) }, '自動', h('small', null, 'に戻す'))
+        ),
     camBox,
     status,
     h(
       'div',
       { class: 'row' },
-      h('button', { class: 'btn ghost', onclick: () => editSheet(c.id) }, '手で入力'),
-      h('button', { class: 'btn ghost', onclick: () => move(1) }, 'スキップ'),
+      S.auto ? h('button', { class: 'btn ghost', onclick: pickSheetForManual }, '手で入力') : h('button', { class: 'btn ghost', onclick: () => editSheet(c.id) }, '手で入力'),
+      S.auto ? null : h('button', { class: 'btn ghost', onclick: () => move(1) }, 'スキップ'),
       h('label', { class: 'btn sub file' }, 'スクショから', h('input', { type: 'file', accept: 'image/*', multiple: true, onchange: (e) => importShots([...e.target.files]) }))
     ),
-    h('p', { class: 'note' }, '右下に並ぶ3つの数字のうち、いちばん上だけを枠に入れてください（No.1や総合の数字は入れない）。カメラは同じ数字を2回続けて読めたら自動で登録して、次のキャラに進みます。Switchのキャラ選択でカーソルを1つずつ右に動かしていけばOK。画像はスマホの外に送られません。')
+    h('p', { class: 'note' }, S.auto ? '右下に並ぶ3つの数字のうち、いちばん上だけを枠に入れてください（No.1や総合の数字は入れない）。数字の左のキャラアイコンで、どのキャラかを自動で見分けます。好きな順番でカーソルを動かしてOK。自信がないときは「このキャラは？」と聞きます。画像はスマホの外に送られません。' : '右下に並ぶ3つの数字のうち、いちばん上だけを枠に入れてください。順番モード：同じ数字を2回続けて読めたら今のキャラに登録して、次のキャラに進みます。Switchのカーソルを1つずつ右へ。画像はスマホの外に送られません。'),
   );
   app.append(main);
   if (S.stream) {
@@ -373,8 +394,20 @@ async function scanOnce() {
   if (!video || !guide || !video.videoWidth || !S.ocrReady || S.busy) return scheduleLoop(400);
   S.busy = true;
   try {
-    const r = await readVote(video, guideCrop(video, guide));
+    const crop = guideCrop(video, guide);
+    const r = await readVote(video, crop);
     if (!S.scanning) return;
+    // 数字が枠の左右の端にかかっている＝はみ出して欠けているかもしれないので読まない
+    if (r.value && r.bbox) {
+      const vw = video.videoWidth;
+      const margin = crop.w * vw * 0.004;
+      if (r.bbox.x0 <= crop.x * vw + margin || r.bbox.x1 >= (crop.x + crop.w) * vw - margin) {
+        S.candidate = null;
+        if (st) st.textContent = '数字が枠からはみ出しています。少し離して枠の中に入れてね';
+        return;
+      }
+    }
+    if (S.auto) return void autoStep(r, video, st);
     const c = CHARS[S.cursor];
     if (r.value && r.value !== S.lastAccepted) {
       if (S.candidate === r.value) {
@@ -407,6 +440,99 @@ async function scanOnce() {
     S.busy = false;
     if (S.scanning) scheduleLoop(350);
   }
+}
+/** 自動判定モード：数字＋アイコンでキャラを決めて登録 */
+function autoStep(r, video, st) {
+  if (!r.value) {
+    S.candidate = null;
+    S.unsure = 0;
+    if (st) st.textContent = '数字を枠に合わせてね';
+    return;
+  }
+  const list = r.bbox ? identify(video, r.bbox) : [];
+  const sure = confident(list);
+  const top = list[0] ? list[0].id : null;
+  // すでに同じ数字で登録済みのキャラなら何もしない（カーソルをうろうろしても大丈夫）
+  if (sure && S.data[top] && S.data[top].gsp === r.value) {
+    S.candidate = null;
+    S.unsure = 0;
+    if (st) st.textContent = `${BY_ID[top].name} は登録済み（${fmt(r.value)}）`;
+    return;
+  }
+  const key = `${r.value}|${sure ? top : '?'}`;
+  if (S.candidate !== key) {
+    S.candidate = key;
+    S.unsure = sure ? 0 : 1;
+    if (st) st.textContent = sure ? `読み取り中… ${BY_ID[top].name} ${fmt(r.value)} ?` : `読み取り中… ${fmt(r.value)}（キャラを確認中）`;
+    return;
+  }
+  if (sure) {
+    // 2回続けて同じ数字・同じキャラ → 登録
+    S.candidate = null;
+    S.unsure = 0;
+    commitAuto(top, r.value);
+    return;
+  }
+  // 数字は読めたけどキャラに自信がない → 3回続いたら聞く
+  S.unsure++;
+  if (S.unsure >= 3 && r.value !== S.lastAsked) {
+    S.unsure = 0;
+    S.lastAsked = r.value;
+    askWho(r.value, list.slice(0, 3).map((x) => x.id));
+  } else if (st) st.textContent = `読み取り中… ${fmt(r.value)}（キャラを確認中）`;
+}
+function commitAuto(id, value) {
+  setGsp(id, value);
+  S.lastId = id;
+  save('lastId', id);
+  const t = tierOf(value, borderNow());
+  try {
+    navigator.vibrate && navigator.vibrate(40);
+  } catch {
+    /* ignore */
+  }
+  beep();
+  toast(`${BY_ID[id].name}：${fmt(value)}（${t.dan}段 ${t.name}）`);
+  S.scanning = !!S.stream;
+  render();
+  flash();
+}
+/** キャラに自信がないとき：候補から選んでもらう（その間は読み取りを止める） */
+function askWho(value, cands) {
+  S.scanning = false;
+  const resume = () => {
+    closeSheet();
+    S.scanning = true;
+    scheduleLoop(300);
+  };
+  const pick = (id) => {
+    closeSheet();
+    commitAuto(id, value);
+  };
+  openSheet([
+    h('div', { class: 'sheet-title' }, 'このキャラは？'),
+    h('p', { class: 'sheet-body' }, `世界戦闘力 ${fmt(value)} は読めましたが、キャラに自信がありません。`),
+    h('div', { class: 'pick-list cands' }, cands.filter((id) => BY_ID[id]).map((id) => h('button', { class: 'pick', onclick: () => pick(id) }, badge(id), h('span', null, BY_ID[id].name)))),
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: resume }, '登録しない'), h('button', { class: 'btn sub', onclick: () => pickAny(value, pick, resume) }, 'ほかのキャラ')),
+  ]);
+  sheetRoot.querySelector('.sheet-bg').onclick = resume;
+}
+function pickAny(value, onPick, onCancel) {
+  const search = h('input', { class: 'in', placeholder: 'キャラ名でさがす' });
+  const list = h('div', { class: 'pick-list' });
+  const draw = () => {
+    const q = norm(search.value);
+    list.textContent = '';
+    for (const c of CHARS) if (!q || norm(c.name).includes(q)) list.append(h('button', { class: `pick ${S.data[c.id] ? 'done' : ''}`, onclick: () => onPick(c.id) }, badge(c.id), h('span', null, c.name)));
+  };
+  search.addEventListener('input', draw);
+  draw();
+  openSheet([h('div', { class: 'sheet-title' }, value ? `${fmt(value)} はどのキャラ？` : 'どのキャラ？'), search, list, h('button', { class: 'btn ghost', onclick: onCancel }, 'やめる')]);
+  sheetRoot.querySelector('.sheet-panel').classList.add('tall');
+  sheetRoot.querySelector('.sheet-bg').onclick = onCancel;
+}
+function pickSheetForManual() {
+  pickAny(null, (id) => (closeSheet(), editSheet(id)), closeSheet);
 }
 function flash() {
   const g = document.getElementById('guide');
@@ -447,7 +573,16 @@ async function importShots(files) {
       const img = await loadImage(files[k]);
       let r = await readAnywhere(prepare(img, null, 96, false));
       if (!r.value) r = await readAnywhere(prepare(img, null, 96, true));
-      results.push({ id: CHARS[(start + k) % CHARS.length].id, value: r.value, url: img.src });
+      let id = CHARS[(start + k) % CHARS.length].id;
+      let sure = false;
+      if (S.auto && r.bbox) {
+        const list = identify(img, r.bbox);
+        if (list.length && confident(list)) {
+          sure = true;
+          id = list[0].id;
+        }
+      }
+      results.push({ id, value: r.value, url: img.src, sure });
     }
   } catch (e) {
     console.error(e);
@@ -456,13 +591,14 @@ async function importShots(files) {
   }
   // 確認画面
   const inputs = results.map((r) => h('input', { class: 'in small num', inputmode: 'numeric', value: r.value ? fmt(r.value) : '' }));
+  const selects = results.map((r) => h('select', { class: `in small sel ${r.sure ? '' : 'unsure'}` }, CHARS.map((c) => h('option', { value: c.id, selected: c.id === r.id }, c.name))));
   openSheet([
     h('div', { class: 'sheet-title' }, '読み取り結果を確認'),
-    h('p', { class: 'sheet-body' }, '左のキャラの順に当てはめます。違っていたら数字を直してください（空欄は登録しません）。'),
+    h('p', { class: 'sheet-body' }, S.auto ? 'キャラはアイコンで判定しました。黄色の欄は自信がないので確認してください。違っていたらキャラや数字を直してください（数字が空欄なら登録しません）。' : '今のキャラから順番に当てはめます。違っていたら直してください（数字が空欄なら登録しません）。'),
     h(
       'div',
       { class: 'import-list' },
-      results.map((r, i) => h('div', { class: 'imp' }, h('img', { src: r.url, alt: '' }), h('div', null, h('div', { class: 'imp-name' }, badge(r.id), BY_ID[r.id].name), inputs[i])))
+      results.map((r, i) => h('div', { class: 'imp' }, h('img', { src: r.url, alt: '' }), h('div', null, selects[i], inputs[i])))
     ),
     h(
       'div',
@@ -477,7 +613,7 @@ async function importShots(files) {
             results.forEach((r, i) => {
               const v = +inputs[i].value.replace(/\D/g, '');
               if (v) {
-                setGsp(r.id, v);
+                setGsp(selects[i].value, v);
                 n++;
               }
             });

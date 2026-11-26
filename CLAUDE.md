@@ -9,5 +9,7 @@ GitHub Pages で公開している、スマブラSPの全キャラ（と各キ�
 - `gsp/`：世界戦闘力をカメラ／スクショで読み取り、クマメイトツールの「世界戦闘力段位」で全キャラの段位を一覧にする機能（公開版。`vendor/` は読み取り用の Tesseract.js、`border.json` は毎日自動更新）。タイトル画面の「段位スキャナー」から入る。
 - ソースは `dev/gsp/`（src: chars.js, tiers.js=段位指数と判定, ocr.js, main.js, style.css）。ビルド：`cd dev/gsp && npm install && node scripts/build.mjs` → `dev/gsp/dist/` の中身を `gsp/` にコピー（`gsp/border.json` は残す）。
 - テスト：`node tests/e2e.mjs`（擬似カメラ映像で連続読み取り）、`node tests/e2e-real.mjs`（手元に置いた実機のテレビ写真 tests/fixture-bayo.jpg ※個人情報が写るのでコミットしない をカメラ映像にして、右下3つの数字のいちばん上を読めるか）、`node tests/import.mjs`（スクショ読み込み）。
-- 読み取り：枠の中の1行を、白黒の作り方を変えた数枚で読んで多数決（ocr.js readVote）。2票そろわなければ登録しない。スクショは一番上にある数字を選ぶ。
+- 読み取り：枠の中の1行を、白黒の作り方を変えた数枚で読んで多数決（ocr.js readVote）。2票そろわなければ登録しない。数字が枠の端にかかっていたら読まない。スクショは一番上にある数字を選ぶ。
+- キャラの自動判定（icons.js）：数字の左のアイコンを12×12に縮めて明るさをそろえた特徴（src/icon-protos.json、絵ではなく数字だけ）と比べる。数字の位置は白黒画像のインクのかたまりから取り（ocr.js inkBox）、アイコンは数字の右端から 11.6×高さ 左。自信がなければ「このキャラは？」と聞く（誤登録を避ける）。順番モードにも切り替えられる。
+- icon-protos.json は利用者が撮った動画（全86キャラ、手元のみ・コミットしない）から作った。作り直す手順はリポジトリ外の作業用スクリプト。
 - `.github/workflows/border.yml`：毎日 `dev/gsp/scripts/update-border.mjs` でクマメイトのVIPボーダー推定値を `gsp/border.json` に書く。
