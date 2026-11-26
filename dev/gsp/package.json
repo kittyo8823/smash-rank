@@ -12,6 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/jpn": "^1.0.0",
     "esbuild": "^0.24.0",
     "tesseract.js": "^5.1.1"
   }

@@ -12,9 +12,10 @@ const files = [];
 for (let i = 0; i < nums.length; i++) {
   await mk.setContent(`<body style="margin:0;width:1280px;height:720px;background:linear-gradient(135deg,#3a1d6e,#0d1033);font-family:sans-serif;color:#fff;position:relative">
   <div style="position:absolute;left:40px;top:30px;font-size:28px">オンライン ・ 12:34 ・ ルール: 1on1 3ストック 7分</div>
-  <div style="position:absolute;left:760px;top:420px;width:460px;height:200px;background:rgba(0,0,0,.35);border-radius:16px"></div>
-  <div style="position:absolute;left:790px;top:440px;font-size:30px;color:#ffe9a0">世界戦闘力</div>
-  <div style="position:absolute;left:790px;top:490px;font-size:72px;font-weight:bold">${nums[i]}</div>
+  <div style="position:absolute;left:640px;top:440px;width:600px;height:250px;background:#dfe4ea;color:#2b2f3a;border-radius:10px">
+   <div style="position:absolute;left:20px;top:22px;font-size:26px;font-weight:bold">世界戦闘力</div><div style="position:absolute;right:24px;top:14px;font-size:44px;font-weight:bold">${nums[i]}</div>
+   <div style="position:absolute;left:20px;top:100px;font-size:22px">No.1 世界戦闘力</div><div style="position:absolute;right:24px;top:92px;font-size:44px;font-weight:bold">16,888,${String(100 + i).padStart(3, '0')}</div>
+   <div style="position:absolute;left:20px;top:180px;font-size:22px">総合世界戦闘力</div><div style="position:absolute;right:24px;top:172px;font-size:44px;font-weight:bold">13,944,731</div></div>
   <div style="position:absolute;left:40px;top:640px;font-size:24px">プレイヤー 2 / 4</div></body>`);
   const f = `${DIR}/shot${i}.png`;
   await mk.screenshot({ path: f });

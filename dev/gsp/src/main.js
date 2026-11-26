@@ -1,7 +1,7 @@
 // スマブラ段位スキャナー：画面
 import { CHARS, BY_ID, norm } from './chars.js';
 import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, thresholdOf, pickGsp } from './tiers.js';
-import { getWorker, prepare, readLine, readAnywhere } from './ocr.js';
+import { getWorker, prepare, readVote, readAnywhere } from './ocr.js';
 
 // ---------- 小道具 ----------
 const h = (tag, attrs, ...kids) => {
@@ -269,8 +269,8 @@ function renderScan() {
     'div',
     { class: 'cam' },
     video,
-    h('div', { class: 'guide', id: 'guide' }, h('span', null, '世界戦闘力をこの枠に')),
-    S.stream ? null : h('div', { class: 'cam-off' }, h('button', { class: 'btn primary big', onclick: startCamera }, 'カメラを起動'), h('p', null, 'テレビやSwitchの画面に出ている世界戦闘力を、枠に合わせて写してください。'))
+    h('div', { class: 'guide', id: 'guide' }, h('span', null, '右下のいちばん上の数字をこの枠に')),
+    S.stream ? null : h('div', { class: 'cam-off' }, h('button', { class: 'btn primary big', onclick: startCamera }, 'カメラを起動'), h('p', null, 'キャラ選択画面の右下に数字が3つ並んでいます。そのいちばん上（そのキャラの世界戦闘力）を、黄色い枠に合わせて写してください。'))
   );
   main.append(
     h(
@@ -295,7 +295,7 @@ function renderScan() {
       h('button', { class: 'btn ghost', onclick: () => move(1) }, 'スキップ'),
       h('label', { class: 'btn sub file' }, 'スクショから', h('input', { type: 'file', accept: 'image/*', multiple: true, onchange: (e) => importShots([...e.target.files]) }))
     ),
-    h('p', { class: 'note' }, 'カメラは同じ数字を2回続けて読めたら自動で登録して、次のキャラに進みます。Switchのキャラ選択でカーソルを1つずつ右に動かしていけばOK。画像はスマホの外に送られません。')
+    h('p', { class: 'note' }, '右下に並ぶ3つの数字のうち、いちばん上だけを枠に入れてください（No.1や総合の数字は入れない）。カメラは同じ数字を2回続けて読めたら自動で登録して、次のキャラに進みます。Switchのキャラ選択でカーソルを1つずつ右に動かしていけばOK。画像はスマホの外に送られません。')
   );
   app.append(main);
   if (S.stream) {
@@ -373,8 +373,7 @@ async function scanOnce() {
   if (!video || !guide || !video.videoWidth || !S.ocrReady || S.busy) return scheduleLoop(400);
   S.busy = true;
   try {
-    const cv = prepare(video, guideCrop(video, guide));
-    const r = await readLine(cv);
+    const r = await readVote(video, guideCrop(video, guide));
     if (!S.scanning) return;
     const c = CHARS[S.cursor];
     if (r.value && r.value !== S.lastAccepted) {
