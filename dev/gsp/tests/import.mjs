@@ -28,7 +28,7 @@ p.on('pageerror', (e) => errors.push(e.message));
 try {
   await p.goto(srv.url);
   await p.click('.tabs button:has-text("スキャン")');
-  await p.setInputFiles('.btn.file input', files);
+  await p.setInputFiles('input[accept="image/*"]', files);
   await p.waitForSelector('text=読み取り結果を確認', { timeout: 90000 });
   const vals = await p.$$eval('.imp input', (e) => e.map((x) => x.value));
   console.log('read', vals.join(' | '), 'expected', nums.join(' | '));
