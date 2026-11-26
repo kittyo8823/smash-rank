@@ -3,6 +3,7 @@ import { CHARS, BY_ID, norm } from './chars.js';
 import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, thresholdOf, pickGsp } from './tiers.js';
 import { getWorker, prepare, readVote, readAnywhere } from './ocr.js';
 import { identify, confident } from './icons.js';
+import { loadVideo, seek, grab, findSegments, readSegments } from './video.js';
 
 // ---------- 小道具 ----------
 const h = (tag, attrs, ...kids) => {
@@ -307,6 +308,14 @@ function renderScan() {
           h('button', { class: 'nav-btn', onclick: () => move(1), 'aria-label': '次のキャラ' }, '›'),
           h('button', { class: 'nav-btn mode', onclick: () => ((S.auto = true), save('auto', true), render()) }, '自動', h('small', null, 'に戻す'))
         ),
+    h(
+      'label',
+      { class: 'btn primary big file video-btn' },
+      '動画からまとめて読む',
+      h('small', null, 'スマホを立てかけて録画 → カーソルを次々動かすだけ（1キャラ0.1秒〜）'),
+      h('input', { type: 'file', accept: 'video/*', onchange: (e) => e.target.files[0] && importVideo(e.target.files[0]) })
+    ),
+    h('div', { class: 'or-line' }, h('span', null, 'または、その場でカメラで読む')),
     camBox,
     status,
     h(
@@ -560,6 +569,184 @@ function beep() {
 }
 
 /** Switchのスクショ（スマホに送ったもの）をまとめて読む。今のキャラから順番に当てはめる */
+// ---------- 動画からまとめて読む ----------
+async function importVideo(file) {
+  stopCamera();
+  openSheet([h('div', { class: 'sheet-title' }, '動画を開いています…'), h('p', { class: 'sheet-body' }, '読み取りの準備もしています（初回は少しかかります）')]);
+  let v;
+  try {
+    [v] = await Promise.all([loadVideo(file), getWorker()]);
+  } catch (e) {
+    closeSheet();
+    toast(e.message || '動画を開けませんでした', 'warn');
+    return;
+  }
+  calibrate(v);
+}
+
+/** 最初に1回だけ：黄色い枠を「いちばん上の数字」に合わせてもらう */
+function calibrate(v) {
+  const box = load('vbox', { x: 0.62, y: 0.6, w: 0.3, h: 0.08 });
+  const wrap = h('div', { class: 'cal-wrap' });
+  const cv = h('canvas', { class: 'cal-frame' });
+  const frame = h('div', { class: 'cal-box' }, h('span', null, 'いちばん上の数字'), h('i', { class: 'cal-handle' }));
+  wrap.append(cv, frame);
+  const slider = h('input', { type: 'range', min: 0, max: 1000, value: 0, class: 'cal-slider' });
+  const info = h('p', { class: 'sheet-body cal-info' }, '黄色い枠を、右下のいちばん上の数字に合わせてください（ドラッグで移動、右下の角で大きさ）');
+  const start = h('button', { class: 'btn primary', disabled: true }, '読み取り開始');
+  let num = null;
+  const place = () => {
+    frame.style.left = `${box.x * 100}%`;
+    frame.style.top = `${box.y * 100}%`;
+    frame.style.width = `${box.w * 100}%`;
+    frame.style.height = `${box.h * 100}%`;
+  };
+  const draw = () => {
+    cv.width = v.videoWidth;
+    cv.height = v.videoHeight;
+    cv.getContext('2d').drawImage(v, 0, 0);
+  };
+  let testTimer = null;
+  let testId = 0;
+  const test = () => {
+    clearTimeout(testTimer);
+    testTimer = setTimeout(async () => {
+      const my = ++testId;
+      info.textContent = '確認中…';
+      start.disabled = true;
+      const c = grab(v);
+      const r = await readVote(c, { ...box });
+      if (my !== testId) return;
+      if (r.value && r.bbox) {
+        num = r.bbox;
+        const list = identify(c, r.bbox);
+        info.textContent = `読めました：${fmt(r.value)}${confident(list) ? `（${BY_ID[list[0].id].name}）` : ''}　この位置で開始できます`;
+        start.disabled = false;
+      } else {
+        num = null;
+        info.textContent = '数字が読めません。枠を数字に合わせるか、下のつまみで数字が映っている場面にしてください';
+      }
+    }, 250);
+  };
+  // ドラッグで移動・角で大きさを変える
+  frame.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    const resize = e.target.classList.contains('cal-handle');
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const b0 = { ...box };
+    const mv = (ev) => {
+      const dx = (ev.clientX - sx) / r.width;
+      const dy = (ev.clientY - sy) / r.height;
+      if (resize) {
+        box.w = Math.min(1 - b0.x, Math.max(0.05, b0.w + dx));
+        box.h = Math.min(1 - b0.y, Math.max(0.02, b0.h + dy));
+      } else {
+        box.x = Math.min(1 - box.w, Math.max(0, b0.x + dx));
+        box.y = Math.min(1 - box.h, Math.max(0, b0.y + dy));
+      }
+      place();
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', mv);
+      window.removeEventListener('pointerup', up);
+      test();
+    };
+    window.addEventListener('pointermove', mv);
+    window.addEventListener('pointerup', up);
+  });
+  slider.addEventListener('input', async () => {
+    await seek(v, (slider.value / 1000) * v.duration);
+    draw();
+    test();
+  });
+  start.onclick = async () => {
+    if (!num) return;
+    save('vbox', box);
+    await runVideo(v, { ...box }, num);
+  };
+  openSheet([
+    h('div', { class: 'sheet-title' }, '数字の位置を合わせる'),
+    wrap,
+    slider,
+    info,
+    h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: closeSheet }, 'やめる'), start),
+  ]);
+  sheetRoot.querySelector('.sheet-panel').classList.add('tall');
+  place();
+  seek(v, Math.min(0.5, v.duration / 2)).then(() => {
+    slider.value = Math.round((v.currentTime / v.duration) * 1000);
+    draw();
+    test();
+  });
+}
+
+async function runVideo(v, box, num) {
+  const bar = h('i');
+  const msg = h('p', { class: 'sheet-body' }, '動画を再生して、キャラの切り替わりを探しています…');
+  v.className = 'run-video';
+  openSheet([h('div', { class: 'sheet-title' }, '読み取り中'), v, h('div', { class: 'run-bar' }, bar), msg, h('p', { class: 'note' }, 'このまま画面を開いておいてください')]);
+  const segs = await findSegments(v, box, num, (p) => (bar.style.width = `${Math.round(p * 50)}%`));
+  msg.textContent = `${segs.length}か所の切り替わりを見つけました。キャラと数字を判定しています…`;
+  const res = await readSegments(v, box, segs, (p) => {
+    bar.style.width = `${50 + Math.round(p * 50)}%`;
+  });
+  showVideoResults(res);
+}
+
+function showVideoResults(res) {
+  if (!res.length) {
+    openSheet([h('div', { class: 'sheet-title' }, '読み取れませんでした'), h('p', { class: 'sheet-body' }, '数字の枠の位置や、動画の明るさを確かめてもう一度ためしてください。'), h('button', { class: 'btn ghost wide', onclick: closeSheet }, '閉じる')]);
+    return;
+  }
+  const rows = res.map((r) => {
+    const sel = h('select', { class: `in small sel ${r.sure ? '' : 'unsure'}` }, h('option', { value: '' }, '（登録しない）'), CHARS.map((c) => h('option', { value: c.id, selected: c.id === r.id && (r.sure || r.list[0]) }, c.name)));
+    if (!r.sure) {
+      // 自信がないものは、候補を上にまとめて選びやすく
+      const hint = h('div', { class: 'cand-row' }, r.list.slice(0, 3).map((x) => h('button', { class: 'cand', onclick: () => ((sel.value = x.id), sel.classList.remove('unsure')) }, BY_ID[x.id].name)));
+      sel.after && setTimeout(() => sel.after(hint));
+    }
+    sel.addEventListener('change', () => sel.classList.remove('unsure'));
+    const inp = h('input', { class: 'in small num', inputmode: 'numeric', value: fmt(r.value) });
+    return { r, sel, inp, el: h('div', { class: `imp vrow ${r.sure ? '' : 'unsure'}` }, r.shot ? h('img', { src: r.shot, alt: '' }) : h('div'), h('div', null, sel, inp)) };
+  });
+  const sureN = res.filter((r) => r.sure).length;
+  openSheet([
+    h('div', { class: 'sheet-title' }, `${res.length}キャラ読み取りました`),
+    h('p', { class: 'sheet-body' }, `${sureN}キャラは自動で判定しました。黄色の${res.length - sureN}キャラは自信がないので、候補から選ぶか直してください。`),
+    h('div', { class: 'import-list' }, rows.map((x) => x.el)),
+    h(
+      'div',
+      { class: 'row' },
+      h('button', { class: 'btn ghost', onclick: closeSheet }, 'やめる'),
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          onclick: () => {
+            let n = 0;
+            for (const x of rows) {
+              const v = +x.inp.value.replace(/\D/g, '');
+              if (x.sel.value && v) {
+                setGsp(x.sel.value, v);
+                n++;
+              }
+            }
+            closeSheet();
+            toast(`${n}キャラ登録しました`);
+            S.tab = 'list';
+            save('tab', 'list');
+            render();
+          },
+        },
+        '登録する'
+      )
+    ),
+  ]);
+  sheetRoot.querySelector('.sheet-panel').classList.add('tall');
+}
+
 async function importShots(files) {
   if (!files.length) return;
   const start = S.cursor;

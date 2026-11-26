@@ -121,3 +121,22 @@ button, a.btn { font: inherit; color: inherit; cursor: pointer; text-decoration:
 
 .icon-mark { position: absolute; left: 25%; width: 14%; top: 39.5%; aspect-ratio: 1; border: 2px dashed rgba(255,255,255,0.85); border-radius: 6px; pointer-events: none; }
 .icon-mark span { position: absolute; left: 0; top: -22px; white-space: nowrap; font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.55); padding: 1px 6px; }
+/* ---- 動画からまとめて読む ---- */
+.video-btn { flex-direction: column; margin-bottom: 10px; }
+.video-btn small { font-family: 'Zen Kaku Gothic New'; font-size: 11px; font-weight: 700; opacity: 0.9; }
+.or-line { text-align: center; font-size: 12px; color: var(--sub); margin: 4px 0 8px; font-weight: 700; }
+.cal-wrap { position: relative; border: 2px solid var(--ink); background: #000; touch-action: none; overflow: hidden; }
+.cal-frame { display: block; width: 100%; height: auto; }
+.cal-box { position: absolute; border: 3px solid var(--yellow); box-shadow: 0 0 0 999px rgba(0,0,0,0.35); touch-action: none; cursor: move; }
+.cal-box span { position: absolute; right: 0; top: -22px; background: var(--yellow); font-size: 11px; font-weight: 700; padding: 1px 6px; white-space: nowrap; }
+.cal-handle { position: absolute; right: -12px; bottom: -12px; width: 24px; height: 24px; background: var(--yellow); border: 2px solid var(--ink); border-radius: 50%; }
+.cal-slider { width: 100%; margin: 10px 0 4px; }
+.cal-info { min-height: 2.8em; font-weight: 700; }
+.run-video { width: 100%; max-height: 30vh; background: #000; border: 2px solid var(--ink); }
+.run-bar { height: 12px; border: 2px solid var(--ink); background: #fff; margin: 10px 0; }
+.run-bar i { display: block; height: 100%; width: 0; background: var(--red); transition: width 0.2s; }
+.imp.vrow { grid-template-columns: 56px 1fr; }
+.imp.vrow img { width: 56px; height: 56px; object-fit: cover; }
+.imp.vrow.unsure { background: #fff8cc; }
+.cand-row { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 4px; }
+.cand { border: 1.5px solid var(--ink); background: #fff; font-size: 12px; font-weight: 700; padding: 3px 8px; }

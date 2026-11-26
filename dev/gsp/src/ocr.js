@@ -197,16 +197,38 @@ function inkBox(cv) {
     } else gap++;
   }
   // 文字らしいかたまり：横長で、中がスカスカ（べったり塗られた背景の板などは除く）
+  const pad = map.pad;
   const texty = groups.filter((x) => {
     const w = x.x1 - x.x0 + 1;
     const fill = x.ink / (w * bh);
-    return w >= bh * 3 && w <= bh * 14 && fill < 0.6;
+    // 切り出した範囲の左右の端にくっついているものは、背景の板や枠の一部（数字ではない）
+    const touches = x.x0 <= pad + 1 || x.x1 >= W - pad - 2;
+    return !touches && w >= bh * 3 && w <= bh * 14 && fill < 0.6;
   });
   if (!texty.length) return null;
   texty.sort((a, b) => b.ink - a.ink);
   const g = texty[0];
+  // 数字のかたまりの中だけで、上下の範囲を測り直す（枠の線などの横一直線の行は文字ではないので除く）
+  const gw = g.x1 - g.x0 + 1;
+  let ry0 = -1;
+  let ry1 = -1;
+  let runBest = null;
+  for (let y = Math.max(0, best.y0 - 2); y <= Math.min(H - 1, best.y1 + 1); y++) {
+    let c = 0;
+    for (let x = g.x0; x <= g.x1; x++) if (dark(x, y)) c++;
+    const text = c > 0 && c < gw * 0.85;
+    if (text) {
+      if (ry0 < 0) ry0 = y;
+      ry1 = y + 1;
+    }
+    if ((!text || y === Math.min(H - 1, best.y1 + 1)) && ry0 >= 0) {
+      if (!runBest || ry1 - ry0 > runBest[1] - runBest[0]) runBest = [ry0, ry1];
+      ry0 = -1;
+    }
+  }
+  const [ty0, ty1] = runBest && runBest[1] - runBest[0] >= 6 ? runBest : [best.y0, best.y1];
   const to = (px, o) => o + (px - map.pad) / map.s;
-  return { x0: to(g.x0, map.ox), y0: to(best.y0, map.oy), x1: to(g.x1 + 1, map.ox), y1: to(best.y1, map.oy) };
+  return { x0: to(g.x0, map.ox), y0: to(ty0, map.oy), x1: to(g.x1 + 1, map.ox), y1: to(ty1, map.oy) };
 }
 
 /** 数字の単語が元画像のどこにあったか（アイコンの位置を出すのに使う） */

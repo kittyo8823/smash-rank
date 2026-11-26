@@ -92,3 +92,10 @@ export function confident(list) {
 }
 
 export const nameOf = (id) => (BY_ID[id] ? BY_ID[id].name : id);
+
+/** 何コマか分の判定をまとめる（キャラごとに似ている度を平均） */
+export function combine(lists) {
+  const sum = new Map();
+  for (const l of lists) for (const { id, sim } of l) sum.set(id, (sum.get(id) || 0) + sim);
+  return [...sum.entries()].map(([id, s]) => ({ id, sim: s / lists.length })).sort((a, b) => b.sim - a.sim);
+}
