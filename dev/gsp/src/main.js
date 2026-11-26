@@ -1,6 +1,6 @@
 // スマブラ段位スキャナー：画面
 import { CHARS, BY_ID, norm } from './chars.js';
-import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, GROUP_LABEL, thresholdOf, pickGsp } from './tiers.js';
+import { TIERS, DEFAULT_BORDER, borderAt, tierOf, nextTierGap, groupOf, thresholdOf, pickGsp } from './tiers.js';
 import { getWorker, prepare, readLine, readAnywhere } from './ocr.js';
 
 // ---------- 小道具 ----------
@@ -152,17 +152,6 @@ function renderList() {
   const rows = CHARS.map((c) => ({ c, i: info(c.id) }));
   const have = rows.filter((r) => r.i);
   const main = h('main', { class: 'list' });
-  // 集計
-  const groups = ['god', 'makyo', 'vip', 'near', 'pre'];
-  const counts = Object.fromEntries(groups.map((g) => [g, have.filter((r) => r.i.group === g).length]));
-  main.append(
-    h(
-      'section',
-      { class: 'summary' },
-      groups.map((g) => h('div', { class: `sum g-${g}` }, h('b', null, counts[g]), h('span', null, GROUP_LABEL[g]))),
-      h('div', { class: 'sum none' }, h('b', null, CHARS.length - have.length), h('span', null, '未登録'))
-    )
-  );
   if (!have.length) {
     main.append(h('div', { class: 'empty' }, h('p', null, 'まだ1キャラも読み取っていません。'), h('button', { class: 'btn primary big', onclick: () => ((S.tab = 'scan'), save('tab', 'scan'), render()) }, 'スキャンを始める')));
     app.append(main);
