@@ -102,6 +102,8 @@ function currentBorderSource() {
   return all[0];
 }
 const borderNow = () => borderAt(S.border);
+// 表示する数字：登録したときのボーダーとの比を、今のボーダーに当てはめた値（クマメイトに合わせて増えていく）
+const nowGsp = (d) => (d.border ? Math.round((d.gsp / d.border) * borderNow()) : d.gsp);
 function persist() {
   save('data', S.data);
   save('cursor', S.cursor);
@@ -188,7 +190,7 @@ function renderList() {
           h(
             'div',
             { class: 'chips' },
-            list.map((r) => h('button', { class: 'fchip', onclick: () => editSheet(r.c.id) }, badge(r.c.id), h('span', { class: 'fn' }, shortName(r.c.id)), h('span', { class: 'fg' }, fmt(r.i.gsp))))
+            list.map((r) => h('button', { class: 'fchip', onclick: () => editSheet(r.c.id) }, badge(r.c.id), h('span', { class: 'fn' }, shortName(r.c.id)), h('span', { class: 'fg' }, fmt(nowGsp(r.i)))))
           )
         )
       );
@@ -215,20 +217,20 @@ function renderList() {
             'li',
             { class: i ? `g-${i.group}` : 'off', onclick: () => editSheet(r.c.id) },
             badge(r.c.id),
-            h('div', { class: 'nm' }, r.c.name, i ? h('small', null, `${fmt(i.gsp)}・${ago(i.at)}`) : h('small', null, '未登録')),
+            h('div', { class: 'nm' }, r.c.name, i ? h('small', null, `${fmt(nowGsp(i))}・${ago(i.at)}`) : h('small', null, '未登録')),
             i ? h('div', { class: 'tp' }, h('b', null, `${i.tier.dan}段`), h('small', null, i.tier.name), i.gap ? h('small', { class: 'gap' }, `次まで あと${fmt(i.gap.need)}`) : null) : null
           );
         })
       )
     );
   }
-  main.append(h('p', { class: 'note' }, '段位は、読み取った時点のVIPボーダーとの比で決めています。世界戦闘力は日々上がるので、数日たっても段位はずれません。'));
+  main.append(h('p', { class: 'note' }, '数字は、読み取った時点のVIPボーダーとの比を今のボーダーに当てはめた値です（クマメイトの推定に合わせて毎日増えていきます）。段位もこの比で決めるので、日がたってもずれません。'));
   app.append(main);
 }
 
 function editSheet(id) {
   const i = info(id);
-  const inp = h('input', { class: 'in num', inputmode: 'numeric', placeholder: '例：12,345,678', value: i ? fmt(i.gsp) : '' });
+  const inp = h('input', { class: 'in num', inputmode: 'numeric', placeholder: '例：12,345,678', value: i ? fmt(nowGsp(i)) : '' });
   const ok = () => {
     const v = pickGsp(inp.value) ?? (+inp.value.replace(/\D/g, '') || null);
     if (!v) return toast('数字を入れてください', 'warn');
@@ -290,7 +292,7 @@ function renderScan() {
             { class: 'who' },
             h('small', null, `キャラは自動で判定（登録 ${done} / ${CHARS.length}）`),
             last ? h('span', null, badge(last), BY_ID[last].name) : h('span', { class: 'muted' }, 'まだ読み取っていません'),
-            h('small', { class: 'cur' }, last && S.data[last] ? `${fmt(S.data[last].gsp)} で登録` : 'Switchで好きなキャラにカーソルを合わせて')
+            h('small', { class: 'cur' }, last && S.data[last] ? `${fmt(nowGsp(S.data[last]))} で登録` : 'Switchで好きなキャラにカーソルを合わせて')
           ),
           h('button', { class: 'nav-btn mode', onclick: () => ((S.auto = false), save('auto', false), render()) }, '順番', h('small', null, 'モード'))
         )
@@ -303,7 +305,7 @@ function renderScan() {
             { class: 'who', onclick: pickSheet },
             h('small', null, `${S.cursor + 1} / ${CHARS.length}　（登録 ${done}）`),
             h('span', null, badge(c.id), c.name),
-            h('small', { class: 'cur' }, S.data[c.id] ? `いま ${fmt(S.data[c.id].gsp)}` : 'Switchでこのキャラにカーソルを合わせて')
+            h('small', { class: 'cur' }, S.data[c.id] ? `いま ${fmt(nowGsp(S.data[c.id]))}` : 'Switchでこのキャラにカーソルを合わせて')
           ),
           h('button', { class: 'nav-btn', onclick: () => move(1), 'aria-label': '次のキャラ' }, '›'),
           h('button', { class: 'nav-btn mode', onclick: () => ((S.auto = true), save('auto', true), render()) }, '自動', h('small', null, 'に戻す'))
